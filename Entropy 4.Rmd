@@ -1,0 +1,306 @@
+---
+title: "Entropy 4"
+output: html_document
+date: "2023-08-10"
+---
+
+# Setting up
+
+```{r}
+library(sf)
+library(raster)
+library(dplyr)
+library(SpatEntropy)
+library(entropy)
+library(fpc)
+library(dbscan)
+library(maptools)
+library(stringr)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(ggridges)
+```
+
+
+# Reading the data
+
+```{r}
+# basic procedure 
+input_path <- "data/cluster_2/"
+files <- list.files(input_path, pattern = "[.]gpkg$", full.names=T)
+for (f in files){
+  # read in file
+  shp <- st_read(f) 
+  shp <- shp %>% st_transform(3857)
+  # calculate centroid 
+  shp_cent <- st_centroid(shp)
+  # filter to grids that are classified as hotspots
+  shp_AM <- shp_cent %>% 
+    filter(., econ_cluster_AM == 1) 
+  shp_BH <- shp_cent %>% 
+    filter(., econ_cluster_BH == 1) 
+  shp_NL <- shp_cent %>% 
+    filter(., econ_cluster_NL == 1) 
+  shp_PE <- shp_cent %>% 
+    filter(., econ_cluster_PE == 1) 
+  shp_SI <- shp_cent %>% 
+    filter(., econ_cluster_SI == 1) 
+  shp_WP <- shp_cent %>% 
+    filter(., econ_cluster_WP == 1) 
+  # Convert to sp objects
+  shp_AM <- as_Spatial(shp_AM)
+  shp_BH <- as_Spatial(shp_BH)
+  shp_NL <- as_Spatial(shp_NL)
+  shp_PE <- as_Spatial(shp_PE)
+  shp_SI <- as_Spatial(shp_SI)
+  shp_WP <- as_Spatial(shp_WP)
+  # get name to save
+  shp_name <- gsub(".*data/cluster_2/(.+)_cluster.gpkg.*", "\\1", f)
+  shp_name_AM <- paste0(shp_name, "_AM")
+  shp_name_BH <- paste0(shp_name, "_BH")
+  shp_name_NL <- paste0(shp_name, "_NL")
+  shp_name_PE <- paste0(shp_name, "_PE")
+  shp_name_SI <- paste0(shp_name, "_SI")
+  shp_name_WP <- paste0(shp_name, "_WP")
+  # save with new name
+  assign(shp_name_AM, shp_AM, envir = .GlobalEnv)
+  assign(shp_name_BH, shp_BH, envir = .GlobalEnv)
+  assign(shp_name_NL, shp_NL, envir = .GlobalEnv)
+  assign(shp_name_PE, shp_PE, envir = .GlobalEnv)
+  assign(shp_name_SI, shp_SI, envir = .GlobalEnv)
+  assign(shp_name_WP, shp_WP, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+rm(shp_cent)
+rm(shp_AM)
+rm(shp_BH)
+rm(shp_NL)
+rm(shp_PE)
+rm(shp_SI)
+rm(shp_WP)
+```
+
+```{r}
+# basic procedure
+input_path_fua <- "data/FUA/"
+files_fua <- list.files(input_path_fua, pattern = "[.]gpkg$", full.names=T)
+for (f in files_fua){
+  # read in file
+  shp <- st_read(f)
+  shp <- shp %>% st_transform(3857)
+  shp <- st_buffer(shp, dist = 500)
+  # Convert to sp objects
+  shp_sp <- as_Spatial(shp)
+  # get name to save
+  shp_name <- gsub(".*data/FUA/(.+)_fua.gpkg", "\\1", f)
+  # save with new name
+  assign(paste(shp_name), shp_sp, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+rm(shp_sp)
+```
+
+
+# Analysis
+
+## DBSCAN
+
+```{r}
+# basic procedure
+spolygondfs <- Filter(function(x) is(x, "SpatialPolygonsDataFrame"), mget(ls()))
+
+for(i in 1:length(spolygondfs)) {
+  owin_city <- as.owin(spolygondfs[[i]])
+  assign(names(spolygondfs)[i], owin_city, envir = .GlobalEnv)
+}
+# remove temporary files
+rm(owin_city)
+```
+
+```{r}
+# list all spdfs
+spointdfs <- Filter(function(x) is(x, "SpatialPointsDataFrame"), mget(ls()))
+```
+
+```{r}
+# Initialize empty vectors to store loop results
+data_name <- c()
+shannon_abs <- c()
+shannon_rel <- c()
+
+# Generate unique values for replacing 0s
+unique_values <- 101:(100 + length(spointdfs))
+```
+
+- original
+
+```{r}
+for(i in 1:length(spointdfs)){
+  # first extract the points from the spatial points data frame
+  coord_points <- spointdfs[[i]] %>%
+    coordinates(.) %>%
+    as.data.frame()
+  if (nrow(coord_points) == 1) {
+    coord_points$cluster <- unique_values[i]
+  } else {
+    # now run the hdbscan analysis 
+    db <- fpc::dbscan(coord_points, eps = 867, MinPts = 2)
+    # add cluster to original data as column
+    coord_points <- coord_points %>% mutate(cluster = db$cluster)
+    # Replace 0s with unique values using dplyr
+    coord_points <- coord_points %>%
+      mutate(cluster = ifelse(cluster == 0, unique_values, cluster))
+  }
+
+  # specify pattern of owin 
+  city_pattern <- gsub("(.+)_(AM|BH|NL|PE|SI|WP).*", "\\1", names(spointdfs)[i])
+  # select owin object
+  list_df_owin <- Filter(function(x) is(x, "owin"), mget(ls(pattern = city_pattern)))
+  df_owin <- list_df_owin[[1]]
+  # create ppp
+  marked_ppp <- ppp(coord_points$coords.x1, coord_points$coords.x2, marks = coord_points$cluster, window = df_owin)
+  # Calculate Shannon entropy manually
+  shannon_result <- shannon(marked_ppp)
+  entropy_abs <- shannon_result$shann
+  entropy_rel <- shannon_result$rel.shann
+  # store output
+  data_name <- c(data_name, names(spointdfs)[i])
+  shannon_abs <- c(shannon_abs, entropy_abs)
+  shannon_rel <- c(shannon_rel, entropy_rel)
+  # store coord_points 
+  df_name <- paste0(names(spointdfs)[i], "_entropy")
+  assign(df_name, coord_points, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# Create a data frame to store results
+shannon_entropy_results <- data.frame(
+  city_name = data_name,
+  Shannon_Absolute = shannon_abs,
+  Shannon_Relative = shannon_rel
+)
+
+# clean the data
+shannon_entropy_results$data_source <- str_sub(shannon_entropy_results$city_name, -2, -1)
+shannon_entropy_results$city_name <- substr(shannon_entropy_results$city_name, 1, nchar(shannon_entropy_results$city_name)-3)
+
+# pivot wider
+shannon_entropy_output <- shannon_entropy_results %>%
+  pivot_wider(
+    names_from = data_source,
+    values_from = c(Shannon_Absolute, Shannon_Relative)
+  )
+
+# set city_name as column name
+shannon_entropy_output <- shannon_entropy_output %>%
+  remove_rownames %>% 
+  column_to_rownames(., var="city_name") 
+```
+
+## Examine the results 
+
+### summary stats
+
+```{r}
+sapply(shannon_entropy_output, function(x) sum(is.na(x)))
+```
+
+
+```{r}
+shannon_entropy_sum_stats <- shannon_entropy_results %>% 
+  group_by(data_source) %>%
+  summarise(
+    mean = round(mean(Shannon_Relative, na.rm = TRUE), 3),
+    sd = round(sd(Shannon_Relative, na.rm = TRUE), 3)
+  )
+
+shannon_entropy_sum_stats
+```
+
+```{r}
+shannon_entropy_sum_stats_2 <- shannon_entropy_results %>% 
+  group_by(data_source) %>%
+  summarise(
+    mean = round(mean(Shannon_Absolute, na.rm = TRUE), 3),
+    sd = round(sd(Shannon_Absolute, na.rm = TRUE), 3)
+  )
+
+shannon_entropy_sum_stats_2
+```
+```{r}
+ggplot(shannon_entropy_sum_stats_2, aes(x=data_source, y=mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2) + xlab("Data Source") + ylab("Shannon's Entropy")
+```
+
+```{r}
+ggplot(shannon_entropy_sum_stats, aes(x=data_source, y=mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2)
+```
+
+
+### visualisation
+
+```{r}
+shannon_entropy_results_reorder <- shannon_entropy_results %>%
+  mutate(data_source = fct_reorder(data_source, Shannon_Absolute, .fun='median', .na_rm = TRUE)) 
+```
+
+```{r}
+# distribution 
+shannon_entropy_plot <- ggplot(shannon_entropy_results_reorder, aes(x=data_source, y = Shannon_Absolute)) + 
+    geom_boxplot(fill="slateblue", alpha=0.2) + 
+    xlab("Data Source") + ylab("Shannon's Entropy") + 
+    theme(axis.text.x = element_text(size = 7.5))
+shannon_entropy_plot
+```
+
+```{r}
+shannon_entropy_results_reorder_2 <- shannon_entropy_results %>%
+  mutate(data_source = fct_reorder(data_source, Shannon_Relative, .fun='median', .na_rm = TRUE)) 
+```
+
+```{r}
+# distribution 
+shannon_entropy_plot_2 <- ggplot(shannon_entropy_results_reorder_2, aes(x=data_source, y = Shannon_Relative)) + 
+    geom_boxplot(fill="slateblue", alpha=0.2) + 
+    xlab("Data Source") + ylab("Relative Shannon's Entropy") + 
+    theme(axis.text.x = element_text(size = 7.5))
+shannon_entropy_plot_2
+```
+
+
+
+
+
+```{r}
+ggplot(shannon_entropy_results_reorder, aes(x = Shannon_Relative, y = data_source, fill = data_source)) +
+  geom_density_ridges() +
+  theme_ridges() + 
+  theme(legend.position = "none")
+```
+
+# Export 
+
+```{r}
+# export the results
+write.csv(shannon_entropy_output, "data/shannon_entropy_output.csv", row.names=TRUE)
+```
+
+```{r}
+ggplot(shannon_entropy_output, aes(x = Shannon_Absolute_AM, y = Shannon_Relative_AM)) + geom_point(size = 1) 
+```
+
+```{r}
+ggplot(shannon_entropy_output, aes(x = Shannon_Absolute_BH, y = Shannon_Relative_BH)) + geom_point(size = 1) 
+```
+
+```{r}
+ggplot(shannon_entropy_output, aes(x = Shannon_Absolute_NL, y = Shannon_Relative_NL)) + geom_point(size = 1) 
+```
+

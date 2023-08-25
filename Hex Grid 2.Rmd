@@ -1,0 +1,119 @@
+---
+title: "Hex"
+output: html_document
+date: "2023-06-20"
+---
+
+# Setting up
+
+```{r}
+library(raster)
+library(sf)
+library(rgdal)
+library(terra)
+library(dplyr)
+library(tmap)
+```
+
+# Reading in data
+
+Reading in the hexagonal grid data
+
+```{r}
+# basic procedure 
+input_path_hex <- "data/hex_grid/"
+files_hex <- list.files(input_path_hex, pattern = "[.]shp$", full.names=T)
+for (f in files_hex){
+  # read in file
+  shp <- st_read(f)
+  shp <- shp %>% st_transform(3857)
+  # get name to save
+  shp_name <- gsub(".*data/hex_grid/(.+).shp", "\\1", f)
+  # save with new name
+  assign(paste(shp_name), shp, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+```
+
+Reading in the raster data
+
+- building height
+
+```{r}
+# basic procedure
+input_path_bh <- "data/GHS-BUILT-H/"
+files_bh <- list.files(input_path_bh, pattern = "[.]tif$", full.names=T)
+for (f in files_bh){
+  # read in the data
+  bh_rast <- rast(f)
+  bh_rast <- terra::project(bh_rast, "epsg:3857")
+  # setting the name
+  city_name <- gsub(".*data/GHS-BUILT-H/(.+)_ghsbuilth.tif", "\\1", f)
+  rast_name <- paste0(city_name, "_BH")
+  assign(rast_name, bh_rast, envir = .GlobalEnv)
+}
+# remove unnecessary files
+rm(bh_rast)
+```
+
+# Function
+
+create a function that can make hexagonal grid vector data from raster data
+
+```{r}
+rast_to_hexgrid <- function(rast_data, hex_grid, stat, final_name)
+  {
+  # transform sf object to spatvector
+  sv <- vect(hex_grid)
+  # extract values from the raster for each grid
+  rast_by_hex <- terra::extract(rast_data, sv)
+  # get stat for each grid cell
+  rast_stat <- rast_by_hex %>% 
+    group_by(ID) %>% 
+    summarize_at(1, stat, na.rm = TRUE)
+  # merge the results
+  hex_rast <- st_as_sf(sv) %>%
+    mutate(ID := seq_len(nrow(.))) %>%
+    left_join(., rast_stat, by = "ID")
+  # change name of data
+  assign(final_name, st_sf(hex_rast), envir = .GlobalEnv)
+}
+```
+
+# Application of the function
+
+```{r}
+# list all files for each class
+rasts <- Filter(function(x) is(x, "SpatRaster"), mget(ls()))
+```
+
+```{r}
+for (i in 1:length(rasts)){
+  # specify pattern of owin 
+  spatraster_name <- names(rasts)[i]
+  city_pattern <- gsub("(.+)_BH", "\\1", spatraster_name)
+  # select hex_grid object
+  list_hex_grid <- Filter(function(x) is(x, "data.frame"), mget(ls(pattern = city_pattern)))
+  city_hex_grid <- list_hex_grid[[1]]
+  # set name
+  rast_name <- paste0(names(rasts)[i], "_hex")
+  # run function
+  rast_to_hexgrid(rasts[[i]], city_hex_grid, mean, rast_name)
+}
+```
+
+# Create outputs
+
+```{r}
+hex_bh_df <- mget(grep('BH_hex', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# save their outputs
+for(i in 1:length(hex_bh_df)) {
+## construct a file name and save this data:
+  file.name = paste0("data/GHS-BUILT-H_hex/", names(hex_bh_df)[i], ".gpkg")
+  st_write(hex_bh_df[[i]], file.name)
+}
+```

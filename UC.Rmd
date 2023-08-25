@@ -1,0 +1,81 @@
+---
+title: "UC"
+output: html_document
+date: "2023-08-05"
+---
+
+# Setting up
+
+```{r}
+library(sf)
+library(dplyr)
+```
+
+# Reading the data
+
+```{r}
+input_path <- "data/cluster_2/"
+files <- list.files(input_path, pattern = "[.]gpkg$", full.names=T)
+for (f in files){
+  # read in file
+  shp <- st_read(f) 
+  shp <- shp %>% st_transform(3857)
+  # calculate centroid 
+  shp_cent <- st_centroid(shp)
+  # get name to save
+  shp_name <- gsub(".*data/cluster_2/(.+).gpkg.*", "\\1", f)
+  assign(shp_name, shp_cent, envir = .GlobalEnv)
+}
+rm(shp)
+rm(shp_cent)
+```
+
+Urban centres
+
+```{r}
+uc <- st_read("urban_centre.gpkg") 
+uc_geom <- uc %>% select(ID_HDC_G0, geom) %>% st_transform(3857)
+```
+
+# Procedure
+
+list all cluster dataframes in the environment 
+
+```{r}
+cluster_dfs <- mget(grep('_cluster', names(which(unlist(eapply(.GlobalEnv, is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# conduct spatial join
+for(i in 1:length(cluster_dfs)){
+  cluster_joined <- st_join(cluster_dfs[[i]], uc_geom) %>%
+    st_drop_geometry() %>%
+    filter(!is.na(ID_HDC_G0)) %>%
+    select(-ID_HDC_G0) %>% 
+    summarise_if(is.numeric, sum, na.rm = TRUE)
+  # change row name to city_name 
+  city_name <- gsub("(.+)_cluster.*", "\\1", names(cluster_dfs)[i])
+  row.names(cluster_joined)[1] <- city_name
+  # add suffix to column names 
+  colnames(cluster_joined) <- paste0(colnames(cluster_joined), "_uc")
+  # dataframe name
+  cluster_joined_name <- paste0(names(cluster_dfs)[i], "_uc")
+  assign(cluster_joined_name, cluster_joined, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# get list of data that have created 
+cluster_uc_dfs <- mget(grep('_cluster_uc', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# append the dataframes together
+cluster_uc <- bind_rows(cluster_uc_dfs)
+```
+
+```{r}
+# export the results
+write.csv(cluster_uc, "data/cluster_uc.csv", row.names=TRUE)
+```
+

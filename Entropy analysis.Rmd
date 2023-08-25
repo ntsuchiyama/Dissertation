@@ -1,0 +1,236 @@
+---
+title: "Entropy Analysis"
+output: html_document
+date: "2023-08-04"
+---
+
+# Setting up
+
+```{r}
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(ggpubr)
+library(stringr)
+library(forcats)
+library(knitr)
+```
+
+
+# Reading in the data
+
+```{r}
+entropy_results <- read.csv("data/entropy_results_2.csv")
+```
+
+## data cleaning 
+
+```{r}
+# remove first column 
+entropy_results <- entropy_results[,-1]
+
+# keep columns contains character "ppp"
+entropy_results <- entropy_results %>% select(contains('ppp'))
+```
+
+```{r}
+# convert rows into columns, columns into rows
+entropy_results_t <- as.data.frame(t(entropy_results))
+
+# convert row index
+entropy_results_t <- tibble::rownames_to_column(entropy_results_t, "pattern")
+```
+
+create new columns 
+
+```{r}
+# number of sub areas 
+entropy_results_t$n_sub_areas <- str_sub(entropy_results_t$pattern, -2, -1)
+
+# data source 
+entropy_results_t$data_source <- str_sub(entropy_results_t$pattern, -9, -8)
+
+# city name 
+entropy_results_t$city_name <- substr(entropy_results_t$pattern, 1, nchar(entropy_results_t$pattern) - 10)
+
+# reorder the columns
+entropy_results_t <- entropy_results_t %>%
+  relocate(city_name, data_source, n_sub_areas)
+
+# drop column of pattern
+entropy_results_t <- select(entropy_results_t, -pattern)
+```
+
+# Analysis 
+
+```{r}
+# create copy 
+entropy_results_final <- entropy_results_t
+
+# pivot
+entropy_results_pivot <- entropy_results_final %>% 
+   tidyr::pivot_longer(
+     cols = starts_with("V"), 
+     names_to = "run", 
+     values_to = "entropy")
+
+# drop column
+entropy_results_pivot <- select(entropy_results_pivot,-run)
+```
+
+```{r}
+# reorder
+entropy_results_pivot <- entropy_results_pivot %>%
+  mutate(data_source = fct_reorder(data_source, entropy, .fun='median')) 
+```
+
+
+# Visualisation and Stats
+
+```{r}
+ggboxplot(entropy_results_pivot, x = "n_sub_areas", y = "entropy", color = "data_source", palette = c("#537c78", "#7ba591", "#cc222b", "#f15b4c", "#faa41b", "#ffd45b"))
+```
+
+
+```{r, fig.height=4, fig.height=6}
+ggplot(entropy_results_pivot, aes(x = n_sub_areas, y = entropy, col=data_source)) + geom_boxplot() + xlab("number of partitioned areas") + ylim(0.7, 1.0)
+```
+
+```{r}
+ggplot(entropy_results_pivot, aes(x = data_source, y = entropy, col=n_sub_areas)) + geom_boxplot()
+```
+
+```{r}
+ggline(entropy_results_pivot, x = "n_sub_areas", y = "entropy", color = "data_source",
+       add = c("mean_se"),
+       palette = c("#537c78", "#7ba591", "#cc222b", "#f15b4c", "#faa41b", "#ffd45b"))
+```
+
+
+
+```{r}
+# summary statistic
+entropy_results_sum_stats <- group_by(entropy_results_pivot, data_source, n_sub_areas) %>%
+  summarise(
+    mean = round(mean(entropy, na.rm = TRUE), 3),
+    sd = round(sd(entropy, na.rm = TRUE), 3)
+  )
+
+print(entropy_results_sum_stats)
+```
+
+```{r}
+knitr::kable(entropy_results_sum_stats, format = "html")
+```
+
+
+```{r}
+# anova
+anova_test <- aov(entropy ~ data_source * n_sub_areas, data = entropy_results_pivot)
+
+# results
+summary(anova_test)
+```
+
+```{r}
+# results
+TukeyHSD(anova_test, which = "data_source")
+```
+
+```{r}
+# results 2
+TukeyHSD(anova_test, which = "n_sub_areas")
+```
+## statistical tests for different data 
+
+```{r}
+# separate the dataset depending on the data source
+entropy_results_AM <- entropy_results_pivot %>%
+  filter(data_source == "AM")
+entropy_results_BH <- entropy_results_pivot %>%
+  filter(data_source == "BH")
+entropy_results_NL <- entropy_results_pivot %>%
+  filter(data_source == "NL")
+entropy_results_PE <- entropy_results_pivot %>%
+  filter(data_source == "PE")
+entropy_results_SI <- entropy_results_pivot %>%
+  filter(data_source == "SI")
+entropy_results_WP <- entropy_results_pivot %>%
+  filter(data_source == "WP")
+```
+
+```{r}
+# anova test 
+aov_AM <- aov(entropy ~ n_sub_areas, data = entropy_results_AM)
+summary(aov_AM)
+# Tukey HSD test
+TukeyHSD(aov_AM)
+```
+
+```{r}
+# anova test 
+aov_BH <- aov(entropy ~ n_sub_areas, data = entropy_results_BH)
+summary(aov_BH)
+# Tukey HSD test
+TukeyHSD(aov_BH)
+```
+
+```{r}
+# anova test 
+aov_NL <- aov(entropy ~ n_sub_areas, data = entropy_results_NL)
+summary(aov_NL)
+# Tukey HSD test
+TukeyHSD(aov_NL)
+```
+
+```{r}
+# anova test 
+aov_PE <- aov(entropy ~ n_sub_areas, data = entropy_results_PE)
+summary(aov_PE)
+# Tukey HSD test
+TukeyHSD(aov_PE)
+```
+
+```{r}
+# anova test 
+aov_SI <- aov(entropy ~ n_sub_areas, data = entropy_results_SI)
+summary(aov_SI)
+# Tukey HSD test
+TukeyHSD(aov_SI)
+```
+
+```{r}
+# anova test 
+aov_WP <- aov(entropy ~ n_sub_areas, data = entropy_results_WP)
+summary(aov_WP)
+# Tukey HSD test
+TukeyHSD(aov_WP)
+```
+
+# Outputs
+
+```{r}
+# creating a new dataframe
+
+# calculate the mean of the entropy
+entropy_results_t$entropy_mean <- rowMeans(entropy_results_t[,4:103])
+
+# the mean results 
+entropy_results_mean <- entropy_results_t %>%
+  select(city_name, data_source, n_sub_areas, entropy_mean)
+```
+
+```{r}
+# convert rows to columns
+entropy_results_mean <- entropy_results_mean %>% 
+  pivot_wider(names_from = c(data_source, n_sub_areas),
+              values_from = entropy_mean, 
+              names_prefix = "entropy_")
+```
+
+```{r}
+# export the results
+write.csv(entropy_results_mean, "data/entropy_results_mean.csv", row.names=FALSE)
+```
+
+

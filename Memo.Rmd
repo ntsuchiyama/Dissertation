@@ -1,0 +1,218 @@
+---
+title: "Memo"
+output: html_document
+date: "2023-08-05"
+---
+
+the relationship between the number of grids included and the number of points 
+
+```{r}
+# AM - amenities
+cor(cluster_results$AM_per, cluster_results$n_grids)
+test_AM <- cor.test(cluster_results$AM_per, cluster_results$n_grids)
+test_AM
+```
+
+```{r}
+# BH - building height
+cor(cluster_results$BH_per, cluster_results$n_grids)
+test_BH <- cor.test(cluster_results$BH_per, cluster_results$n_grids)
+test_BH
+```
+
+```{r}
+# NL - night light 
+cor(cluster_results$NL_per, cluster_results$n_grids)
+test_NL <- cor.test(cluster_results$NL_per, cluster_results$n_grids)
+test_NL
+```
+
+```{r}
+# PE - predicted employment 
+cor(cluster_results$PE_per, cluster_results$n_grids)
+test_PE <- cor.test(cluster_results$PE_per, cluster_results$n_grids)
+test_PE
+```
+
+```{r}
+# SI - street intersections 
+cor(cluster_results$SI_per, cluster_results$n_grids)
+test_SI <- cor.test(cluster_results$SI_per, cluster_results$n_grids)
+test_SI
+```
+
+```{r}
+# WP - worldpop
+cor(cluster_results$WP_per, cluster_results$n_grids)
+test_WP <- cor.test(cluster_results$WP_per, cluster_results$n_grids)
+test_WP
+```
+
+
+### cluster proportions 
+
+```{r}
+# calculate the correlation
+m_prop <- cor(results[1:10], results[11:16])
+print(m_prop)
+```
+
+```{r}
+# significance
+p_values_prop <- matrix(0, nrow(m_prop), ncol(m_prop))
+for (i in 1:nrow(m_prop)) {
+  for (j in 1:ncol(m_prop)) {
+    p_values_prop[i, j] <- cor.test(results[, i], results[, j+10])$p.value
+  }
+}
+rownames(p_values_prop) <- rownames(m_prop) 
+colnames(p_values_prop) <- colnames(m_prop)
+```
+
+
+```{r}
+# Convert the correlation matrix and p-values to data frames for ggplot2
+cor_df_prop <- as.data.frame(as.table(m_prop))
+p_values_df_prop <- as.data.frame(as.table(p_values_prop))
+colnames(cor_df_prop) <- c("fua_attributes", "prop_clusters", "cc")
+colnames(p_values_df_prop) <- c("fua_attributes", "prop_clusters", "p_value")
+```
+
+
+visualisations
+
+```{r}
+# Create a custom correlation plot with significance levels using ggplot2
+ggplot(cor_df_prop, aes(x = prop_clusters, y = fua_attributes)) +
+  geom_tile(aes(fill = cc)) +
+  # color scale
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", limits = c(-1, 1)) + 
+  # add labels
+  geom_text(data = cor_df_prop, aes(label = paste0(sprintf("%.2f", cc), ifelse(p_values_df_prop$p_value < 0.05, "*", ""))), color = "black", size = 3) + 
+  # theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## uc
+
+```{r}
+# calculate the correlation
+m_uc <- cor(results[1:10], results[17:22])
+print(m_uc)
+```
+
+```{r}
+# significance
+p_values_uc <- matrix(0, nrow(m_uc), ncol(m_uc))
+for (i in 1:nrow(m_uc)) {
+  for (j in 1:ncol(m_uc)) {
+    p_values_uc[i, j] <- cor.test(results[, i], results[, j+16])$p.value
+  }
+}
+rownames(p_values_uc) <- rownames(m_uc) 
+colnames(p_values_uc) <- colnames(m_uc)
+```
+
+```{r}
+# Convert the correlation matrix and p-values to data frames for ggplot2
+cor_df_uc <- as.data.frame(as.table(m_uc))
+p_values_df_uc <- as.data.frame(as.table(p_values_uc))
+colnames(cor_df_uc) <- c("fua_attributes", "prop_uc", "cc")
+colnames(p_values_df_uc) <- c("fua_attributes", "prop_uc", "p_value")
+```
+
+```{r}
+# Create a custom correlation plot with significance levels using ggplot2
+ggplot(cor_df_uc, aes(x = prop_uc, y = fua_attributes)) +
+  geom_tile(aes(fill = cc)) +
+  # color scale
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", limits = c(-1, 1)) + 
+  # add labels
+  geom_text(data = cor_df_uc, aes(label = paste0(sprintf("%.2f", cc), ifelse(p_values_df_uc$p_value < 0.05, "*", ""))), color = "black", size = 3) + 
+  # theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+## entropy
+
+```{r}
+# calculate the correlation
+m_entropy <- cor(results[1:10], results[23:40])
+print(m_entropy)
+```
+
+```{r}
+# significance
+p_values_entropy <- matrix(0, nrow(m_entropy), ncol(m_entropy))
+for (i in 1:nrow(m_entropy)) {
+  for (j in 1:ncol(m_entropy)) {
+    p_values_entropy[i, j] <- cor.test(results[, i], results[, j+22])$p.value
+  }
+}
+rownames(p_values_entropy) <- rownames(m_entropy) 
+colnames(p_values_entropy) <- colnames(m_entropy)
+```
+
+```{r}
+# Convert the correlation matrix and p-values to data frames for ggplot2
+cor_df_entropy <- as.data.frame(as.table(m_entropy))
+p_values_df_entropy <- as.data.frame(as.table(p_values_entropy))
+colnames(cor_df_entropy) <- c("fua_attributes", "entropy", "cc")
+colnames(p_values_df_entropy) <- c("fua_attributes", "entropy", "p_value")
+```
+
+```{r, fig.height = 15, fig.width= 20}
+# Create a custom correlation plot with significance levels using ggplot2
+ggplot(cor_df_entropy, aes(x = entropy, y = fua_attributes)) +
+  geom_tile(aes(fill = cc)) +
+  # color scale
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", limits = c(-1, 1)) + 
+  # add labels
+  geom_text(data = cor_df_entropy, aes(label = paste0(sprintf("%.2f", cc), ifelse(p_values_df_entropy$p_value < 0.05, "*", ""))), color = "black", size = 6) + 
+  # theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 15), axis.text.y = element_text(size=20), axis.title=element_text(size=25,face="bold"), legend.title = element_text(size=30), legend.text = element_text(size=25), legend.key.size = unit(3, 'cm'))
+```
+
+## nmi
+
+```{r}
+# calculate the correlation
+m_nmi <- cor(results[1:10], results[41:55])
+print(m_nmi)
+```
+
+```{r}
+# significance
+p_values_nmi <- matrix(0, nrow(m_nmi), ncol(m_nmi))
+for (i in 1:nrow(m_nmi)) {
+  for (j in 1:ncol(m_nmi)) {
+    p_values_nmi[i, j] <- cor.test(results[, i], results[, j+40])$p.value
+  }
+}
+rownames(p_values_nmi) <- rownames(m_nmi) 
+colnames(p_values_nmi) <- colnames(m_nmi)
+```
+
+```{r}
+# Convert the correlation matrix and p-values to data frames for ggplot2
+cor_df_nmi <- as.data.frame(as.table(m_nmi))
+p_values_df_nmi <- as.data.frame(as.table(p_values_nmi))
+colnames(cor_df_nmi) <- c("fua_attributes", "nmi", "cc")
+colnames(p_values_df_nmi) <- c("fua_attributes", "nmi", "p_value")
+```
+
+```{r, fig.height=25}
+# Create a custom correlation plot with significance levels using ggplot2
+ggplot(cor_df_nmi, aes(x = nmi, y = fua_attributes)) +
+  geom_tile(aes(fill = cc)) +
+  # color scale
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", limits = c(-1, 1)) + 
+  # add labels
+  geom_text(data = cor_df_nmi, aes(label = paste0(sprintf("%.2f", cc), ifelse(p_values_df_nmi$p_value < 0.05, "*", ""))), color = "black", size = 10) + 
+  # theme
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 25), axis.text.y = element_text(size=30), axis.title=element_text(size=35,face="bold"), legend.title = element_text(size=30), legend.text = element_text(size=25), legend.key.size = unit(3, 'cm'))
+```

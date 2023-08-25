@@ -1,0 +1,224 @@
+---
+title: "Entropy"
+output: html_document
+date: "2023-07-11"
+---
+
+# Setting up 
+
+```{r, message=FALSE, warning=FALSE}
+library(sf)
+library(dplyr)
+library(SpatEntropy)
+library(maptools)
+```
+
+# Reading in data
+
+setting up procedure for reading in cluster and changing cluster object to sp
+
+```{r}
+# basic procedure 
+input_path <- "data/cluster/"
+files <- list.files(input_path, pattern = "[.]gpkg$", full.names=T)
+for (f in files){
+  # read in file
+  shp <- st_read(f) 
+  shp <- shp %>% st_transform(3857)
+  # calculate centroid 
+  shp_cent <- st_centroid(shp)
+  # filter to grids that are classified as hotspots
+  shp_AM <- shp_cent %>% 
+    filter(., econ_cluster_AM == 1) 
+  shp_BH <- shp_cent %>% 
+    filter(., econ_cluster_BH == 1) 
+  shp_NL <- shp_cent %>% 
+    filter(., econ_cluster_NL == 1) 
+  shp_PE <- shp_cent %>% 
+    filter(., econ_cluster_PE == 1) 
+  shp_SI <- shp_cent %>% 
+    filter(., econ_cluster_SI == 1) 
+  shp_WP <- shp_cent %>% 
+    filter(., econ_cluster_WP == 1) 
+  # Convert to sp objects
+  shp_AM <- as_Spatial(shp_AM)
+  shp_BH <- as_Spatial(shp_BH)
+  shp_NL <- as_Spatial(shp_NL)
+  shp_PE <- as_Spatial(shp_PE)
+  shp_SI <- as_Spatial(shp_SI)
+  shp_WP <- as_Spatial(shp_WP)
+  # get name to save
+  shp_name <- gsub(".*data/cluster/(.+)_cluster.gpkg.*", "\\1", f)
+  shp_name_AM <- paste0(shp_name, "_AM")
+  shp_name_BH <- paste0(shp_name, "_BH")
+  shp_name_NL <- paste0(shp_name, "_NL")
+  shp_name_PE <- paste0(shp_name, "_PE")
+  shp_name_SI <- paste0(shp_name, "_SI")
+  shp_name_WP <- paste0(shp_name, "_WP")
+  # save with new name
+  assign(shp_name_AM, shp_AM, envir = .GlobalEnv)
+  assign(shp_name_BH, shp_BH, envir = .GlobalEnv)
+  assign(shp_name_NL, shp_NL, envir = .GlobalEnv)
+  assign(shp_name_PE, shp_PE, envir = .GlobalEnv)
+  assign(shp_name_SI, shp_SI, envir = .GlobalEnv)
+  assign(shp_name_WP, shp_WP, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+rm(shp_cent)
+rm(shp_AM)
+rm(shp_BH)
+rm(shp_NL)
+rm(shp_PE)
+rm(shp_SI)
+rm(shp_WP)
+```
+
+Read in the boundaries for cities and convert into sp objects
+
+```{r}
+# basic procedure
+input_path_boundaries <- "data/FUA/"
+files_boundaries <- list.files(input_path_boundaries, pattern = "[.]gpkg$", full.names=T)
+for (f in files_boundaries){
+  # read in file
+  shp <- st_read(f)
+  shp <- shp %>% st_transform(3857)
+  shp <- st_buffer(shp, 500)
+  # Convert to sp objects
+  shp_sp <- as_Spatial(shp)
+  # get name to save
+  shp_name <- gsub(".*data/FUA/(.+)_fua.gpkg", "\\1", f)
+  # save with new name
+  assign(paste(shp_name), shp_sp, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+rm(shp_sp)
+```
+
+
+# Analysis
+
+### Create ppp object
+
+Coerce from SpatialPolygons to an object of class “owin” (observation window)
+
+```{r}
+# basic procedure
+spolygondfs <- Filter(function(x) is(x, "SpatialPolygonsDataFrame"), mget(ls()))
+
+for(i in 1:length(spolygondfs)) {
+  owin_city <- as.owin(spolygondfs[[i]])
+  owin_name <- paste0(names(spolygondfs)[i], "_owin") 
+  assign(owin_name, owin_city, envir = .GlobalEnv)
+}
+# remove temporary files
+rm(owin_city)
+```
+
+Extract coordinates from SpatialPointsDataFrame and create a ‘ppp’ (point pattern) object
+
+```{r}
+# basic procedure
+spointdfs <- Filter(function(x) is(x, "SpatialPointsDataFrame"), mget(ls()))
+
+for (i in 1:length(spointdfs)){
+  pts <- coordinates(spointdfs[[i]])
+  # specify pattern of owin 
+  city_pattern <- gsub("(.+)_(AM|BH|NL|PE|SI|WP).*", "\\1", names(spointdfs)[i])
+  # select owin object
+  list_df_owin <- Filter(function(x) is(x, "owin"), mget(ls(pattern = city_pattern)))
+  df_owin <- list_df_owin[[1]]
+  # create ppp object
+  p <- ppp(pts[,1], pts[,2], window = df_owin)
+  ppp_name <- paste0(names(spointdfs)[i], "_ppp") 
+  assign(ppp_name, p, envir = .GlobalEnv)
+}
+# remove temporary files
+rm(pts)
+rm(p)
+rm(list_df_owin)
+rm(df_owin)
+```
+
+calculation of spatial entropy (Batty)
+
+```{r}
+# basic procedure
+ppps <- Filter(function(x) is(x, "ppp"), mget(ls()))
+```
+
+```{r}
+# function for producing the relative spatial entropy 
+rel_batty <- function(cluster_ppp, part_n){
+  batty_ent = batty(cluster_ppp, partition = part_n)
+  return (batty_ent$rel.batty)
+  }
+```
+
+```{r}
+# partition = 10
+for (i in 1:length(ppps)){
+  batty_list <- replicate(100, rel_batty(ppps[[i]], 10), simplify=FALSE)
+  batty_unlist <- as.numeric(unlist(batty_list))
+  list_name <- paste0(names(ppps)[i], "_10")
+  assign(list_name, batty_unlist, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# partition = 20
+for (i in 1:length(ppps)){
+  batty_list <- replicate(100, rel_batty(ppps[[i]] , 20), simplify=FALSE)
+  batty_unlist <- as.numeric(unlist(batty_list))
+  list_name <- paste0(names(ppps)[i], "_20")
+  assign(list_name, batty_unlist, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# partition = 50
+for (i in 1:length(ppps)){
+  batty_list <- replicate(100, rel_batty(ppps[[i]], 50), simplify=FALSE)
+  batty_unlist <- as.numeric(unlist(batty_list))
+  list_name <- paste0(names(ppps)[i], "_50")
+  assign(list_name, batty_unlist, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# store the results as a 
+```
+
+
+# Output 
+
+```{r}
+## get all objects in environment 
+all_objects <- ls()
+
+# create a list to store numeric objects
+numeric_objects <- list()
+
+# iterate through all objects and check if they are numeric
+for (name in all_objects){
+  if (is.numeric(get(name))) {
+    numeric_objects[[name]] <- get(name)
+  }
+}
+```
+
+
+```{r}
+# set column names and convert the list of numeric objects into a dataframe
+col_names <- names(numeric_objects)
+entropy_df <- data.frame(numeric_objects)
+colnames(entropy_df) <- col_names
+```
+
+```{r}
+# save as csv
+write.csv(entropy_df, "data/entropy_results.csv", row.names = TRUE)
+```
+

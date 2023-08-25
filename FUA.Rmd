@@ -1,0 +1,132 @@
+---
+title: "Boundaries"
+output: html_document
+date: "2023-07-20"
+---
+
+# Setting up
+
+```{r}
+library(sf)
+```
+
+# Reading in the data
+
+## FUA
+
+Reading in the data for FUAs (using the features data)
+
+```{r}
+# basic procedure 
+input_path <- "data/features"
+files <- list.files(input_path, pattern = "[.]gpkg$", full.names=T)
+for (f in files){
+  # read in file
+  shp <- st_read(f)
+  shp <- shp %>% st_transform(3857) %>% st_union()
+  # get name to save
+  city_name <- gsub(".*data/features/(.+)_all_features.gpkg.*", "\\1", f)
+  shp_name <- paste0(city_name)
+  # save with new name
+  assign(paste(shp_name), st_sf(shp), envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+```
+
+## Municipal boundaries
+
+Reading in the municipal boundaries 
+
+- Brazil
+
+```{r}
+brazil <- st_read("gadm41_BRA_shp/gadm41_BRA_2.shp")
+brazil <- brazil %>% st_transform(3857)
+```
+
+- Colombia
+
+```{r}
+colombia <- st_read("gadm41_COL_shp/gadm41_COL_2.shp")
+colombia <- colombia %>% st_transform(3857)
+```
+
+- Mexico
+
+```{r}
+mexico <- st_read("gadm41_MEX_shp/gadm41_MEX_2.shp")
+mexico <- mexico %>% st_transform(3857)
+```
+
+
+# Analysis
+
+Overlay FUA data with municipal boundaries 
+
+- Brazil 
+
+```{r}
+brazil_dfs <- mget(grep('BRA', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+
+for(i in 1:length(brazil_dfs)) {
+  Mun_df <- st_intersection(brazil_dfs[[i]], brazil)
+  Mun_name <- paste0(names(brazil_dfs)[i], "_boundaries")
+  assign(Mun_name, Mun_df, envir = .GlobalEnv)
+}
+```
+- Colombia
+
+```{r}
+colombia_dfs <- mget(grep('COL', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+
+for(i in 1:length(colombia_dfs)) {
+  Mun_df <- st_intersection(colombia_dfs[[i]], colombia)
+  Mun_name <- paste0(names(colombia_dfs)[i], "_boundaries")
+  assign(Mun_name, Mun_df, envir = .GlobalEnv)
+}
+```
+
+- Mexico
+
+```{r}
+mexico_dfs <- mget(grep('MEX', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+
+for(i in 1:length(mexico_dfs)) {
+  Mun_df <- st_intersection(mexico_dfs[[i]], mexico)
+  Mun_name <- paste0(names(mexico_dfs)[i], "_boundaries")
+  assign(Mun_name, Mun_df, envir = .GlobalEnv)
+}
+```
+
+# Outputs
+
+- boundaries
+
+```{r}
+boundaries_dfs <- mget(grep('boundaries', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+
+```{r}
+# save their outputs
+for(i in 1:length(boundaries_dfs)) {
+## construct a file name and save this data:
+  file.name = paste0("data/boundaries/", names(boundaries_dfs)[i], ".shp")
+  st_write(boundaries_dfs[[i]], file.name)
+}
+```
+- hex grids
+
+```{r}
+hex_grid_dfs <- mget(grep('hex_grid', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# save their outputs
+for(i in 1:length(hex_grid_dfs)) {
+## construct a file name and save this data:
+  file.name = paste0("data/hex_grid/", names(hex_grid_dfs)[i], ".shp")
+  st_write(hex_grid_dfs[[i]], file.name)
+}
+```

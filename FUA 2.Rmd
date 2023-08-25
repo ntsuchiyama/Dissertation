@@ -1,0 +1,80 @@
+---
+title: "FUA 2"
+output: html_document
+date: "2023-08-10"
+---
+
+# Setting up
+
+```{r}
+library(sf)
+library(dplyr)
+```
+
+# Reading in the data
+
+```{r}
+fua <- st_read("fua.gpkg")
+```
+
+# Procedure
+
+```{r}
+# list all data
+input_path <- "data/features/"
+files <- list.files(input_path, pattern = "[.]gpkg$", full.names=T)
+```
+
+```{r}
+# list all city names
+city_name_list <- c()
+for (f in files){
+  city_name <- gsub(".*data/features/(.+)_all_features.gpkg.*", "\\1", f)
+  city_name_list <- c(city_name_list, city_name)
+}
+```
+
+```{r}
+# create copy 
+fua_cleaned <- fua
+
+# clean dataframe 
+fua_cleaned$FUA_name_original <- fua_cleaned$eFUA_name
+fua_cleaned$eFUA_name <- tolower(fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub(" ", "_", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("í", "i", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("é", "e", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ç", "c", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("-", "_", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("â", "a", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ú", "u", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("á", "a", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ó", "o", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ã", "a", fua_cleaned$eFUA_name)
+
+# create city_name column
+fua_cleaned$city_name <- paste0(fua_cleaned$Cntry_ISO, "_", fua_cleaned$eFUA_name)
+```
+
+```{r}
+# extract fua for each city
+for(i in 1:length(city_name_list)){
+  fua_df <- fua_cleaned %>% filter(city_name == city_name_list[[i]])
+  fua_name <- paste0(city_name_list[i], "_fua")
+  assign(fua_name, fua_df, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# get list of data 
+fua_dfs <- mget(grep('_fua', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# save their outputs
+for(i in 1:length(fua_dfs)) {
+## construct a file name and save this data:
+  file.name = paste0("data/FUA/", names(fua_dfs)[i], ".gpkg")
+  st_write(fua_dfs[[i]], file.name)
+}
+```

@@ -1,0 +1,202 @@
+---
+title: "Map visualisations"
+output: html_document
+date: "2023-08-08"
+---
+
+```{r}
+library(sf)
+library(tmap)
+library(dplyr)
+```
+
+# Reading in the data
+
+## Clusters 
+
+- Sao Paulo, Brazil
+
+```{r}
+sao_paulo_cluster <- st_read("data/cluster_2/BRA_sao_paulo_cluster.gpkg")
+sao_paulo_AM <- sao_paulo_cluster %>% filter(econ_cluster_AM == 1)
+sao_paulo_BH <- sao_paulo_cluster %>% filter(econ_cluster_BH == 1)
+sao_paulo_NL <- sao_paulo_cluster %>% filter(econ_cluster_NL == 1)
+sao_paulo_PE <- sao_paulo_cluster %>% filter(econ_cluster_PE == 1)
+sao_paulo_SI <- sao_paulo_cluster %>% filter(econ_cluster_SI == 1)
+sao_paulo_WP <- sao_paulo_cluster %>% filter(econ_cluster_WP == 1)
+```
+
+```{r}
+bogota_cluster <- st_read("data/cluster_2/COL_bogota_cluster.gpkg")
+bogota_AM <- bogota_cluster %>% filter(econ_cluster_AM == 1)
+bogota_BH <- bogota_cluster %>% filter(econ_cluster_BH == 1)
+bogota_NL <- bogota_cluster %>% filter(econ_cluster_NL == 1)
+bogota_PE <- bogota_cluster %>% filter(econ_cluster_PE == 1)
+bogota_SI <- bogota_cluster %>% filter(econ_cluster_SI == 1)
+bogota_WP <- bogota_cluster %>% filter(econ_cluster_WP == 1)
+```
+```{r}
+mexico_city_cluster <- st_read("data/cluster_2/MEX_mexico_city_cluster.gpkg")
+mexico_city_AM <- mexico_city_cluster %>% filter(econ_cluster_AM == 1)
+mexico_city_BH <- mexico_city_cluster %>% filter(econ_cluster_BH == 1)
+mexico_city_NL <- mexico_city_cluster %>% filter(econ_cluster_NL == 1)
+mexico_city_PE <- mexico_city_cluster %>% filter(econ_cluster_PE == 1)
+mexico_city_SI <- mexico_city_cluster %>% filter(econ_cluster_SI == 1)
+mexico_city_WP <- mexico_city_cluster %>% filter(econ_cluster_WP == 1)
+```
+
+```{r}
+COL_pasto_cluster <- st_read("data/cluster_2/COL_pasto_cluster.gpkg")
+pasto_AM <- COL_pasto_cluster %>% filter(econ_cluster_AM == 1)
+pasto_BH <- COL_pasto_cluster %>% filter(econ_cluster_BH == 1)
+pasto_NL <- COL_pasto_cluster %>% filter(econ_cluster_NL == 1)
+pasto_PE <- COL_pasto_cluster %>% filter(econ_cluster_PE == 1)
+pasto_SI <- COL_pasto_cluster %>% filter(econ_cluster_SI == 1)
+pasto_WP <- COL_pasto_cluster %>% filter(econ_cluster_WP == 1)
+```
+
+```{r}
+BRA_assis_cluster <- st_read("data/cluster_2/BRA_assis_cluster.gpkg")
+assis_AM <- BRA_assis_cluster %>% filter(econ_cluster_AM == 1)
+assis_BH <- BRA_assis_cluster %>% filter(econ_cluster_BH == 1)
+assis_NL <- BRA_assis_cluster %>% filter(econ_cluster_NL == 1)
+assis_PE <- BRA_assis_cluster %>% filter(econ_cluster_PE == 1)
+assis_SI <- BRA_assis_cluster %>% filter(econ_cluster_SI == 1)
+assis_WP <- BRA_assis_cluster %>% filter(econ_cluster_WP == 1)
+```
+
+```{r}
+MEX_sat_cluster <- st_read("data/cluster_2/MEX_san_andres_tuxtla_cluster.gpkg")
+sat_AM <- MEX_sat_cluster %>% filter(econ_cluster_AM == 1)
+sat_BH <- MEX_sat_cluster %>% filter(econ_cluster_BH == 1)
+sat_NL <- MEX_sat_cluster %>% filter(econ_cluster_NL == 1)
+sat_PE <- MEX_sat_cluster %>% filter(econ_cluster_PE == 1)
+sat_SI <- MEX_sat_cluster %>% filter(econ_cluster_SI == 1)
+sat_WP <- MEX_sat_cluster %>% filter(econ_cluster_WP == 1)
+```
+
+
+## FUA and urban centre
+
+```{r}
+uc <- st_read("urban_centre.gpkg") %>% st_transform(3857)
+fua <- st_read("fua.gpkg") %>% st_transform(3857)
+```
+### Functional urban areas for each city - extraction 
+
+```{r}
+sao_paulo_boundaries <- fua %>% filter(eFUA_name == "São Paulo")
+bogota_boundaries <- fua %>% filter(eFUA_name == "Bogota") 
+mexico_city_boundaries <- fua %>% filter(eFUA_name == "Mexico City")
+```
+
+```{r}
+pasto_boundaries <- st_read("data/FUA/COL_pasto_fua.gpkg") %>% st_transform(3857)
+assis_boundaries <- st_read("data/FUA/BRA_assis_fua.gpkg") %>% st_transform(3857)
+sat_boundaries <- st_read("data/FUA/MEX_san_andres_tuxtla_fua.gpkg") %>% st_transform(3857)
+```
+
+
+
+### Urban centers within the FUA - extraction  
+
+```{r}
+sao_paulo_uc <- st_intersection(uc, sao_paulo_boundaries)
+bogota_uc <- st_intersection(uc, bogota_boundaries)
+mexico_city_uc <- st_intersection(uc, mexico_city_boundaries)
+```
+
+```{r}
+pasto_uc <- st_intersection(uc, pasto_boundaries)
+assis_uc <- st_intersection(uc, assis_boundaries)
+sat_uc <- st_intersection(uc, sat_boundaries)
+```
+
+# Mapping 
+
+- Sao Paulo, Brazil 
+
+main.title="NL", main.title.size = 1, main.title.position = "center"
+
+```{r}
+map_sao_paulo_AM <- tm_shape(sao_paulo_boundaries) + tm_borders() + tm_shape(sao_paulo_uc) + tm_fill() + tm_shape(sao_paulo_AM) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sao_paulo_BH <- tm_shape(sao_paulo_boundaries) + tm_borders() + tm_shape(sao_paulo_uc) + tm_fill() + tm_shape(sao_paulo_BH) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sao_paulo_NL <- tm_shape(sao_paulo_boundaries) + tm_borders() + tm_shape(sao_paulo_uc) + tm_fill() + tm_shape(sao_paulo_NL) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sao_paulo_PE <- tm_shape(sao_paulo_boundaries) + tm_borders() + tm_shape(sao_paulo_uc) + tm_fill() + tm_shape(sao_paulo_PE) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sao_paulo_SI <- tm_shape(sao_paulo_boundaries) + tm_borders() + tm_shape(sao_paulo_uc) + tm_fill() + tm_shape(sao_paulo_SI) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sao_paulo_WP <- tm_shape(sao_paulo_boundaries) + tm_borders() + tm_shape(sao_paulo_uc) + tm_fill() + tm_shape(sao_paulo_WP) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+```
+
+```{r, fig.height=6, fig.width=1}
+tmap_arrange(map_sao_paulo_AM, map_sao_paulo_BH, map_sao_paulo_NL, map_sao_paulo_PE, map_sao_paulo_SI, map_sao_paulo_WP, nrow = 6)
+```
+
+- Bogota, Colombia
+
+```{r}
+map_bogota_AM <- tm_shape(bogota_boundaries) + tm_borders() + tm_shape(bogota_uc) + tm_fill() + tm_shape(bogota_AM) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_bogota_BH <- tm_shape(bogota_boundaries) + tm_borders() + tm_shape(bogota_uc) + tm_fill() + tm_shape(bogota_BH) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_bogota_NL <- tm_shape(bogota_boundaries) + tm_borders() + tm_shape(bogota_uc) + tm_fill() + tm_shape(bogota_NL) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_bogota_PE <- tm_shape(bogota_boundaries) + tm_borders() + tm_shape(bogota_uc) + tm_fill() + tm_shape(bogota_PE) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_bogota_SI <- tm_shape(bogota_boundaries) + tm_borders() + tm_shape(bogota_uc) + tm_fill() + tm_shape(bogota_SI) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_bogota_WP <- tm_shape(bogota_boundaries) + tm_borders() + tm_shape(bogota_uc) + tm_fill() + tm_shape(bogota_WP) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+```
+
+```{r, fig.height=6, fig.width=1}
+tmap_arrange(map_bogota_AM, map_bogota_BH, map_bogota_NL, map_bogota_PE, map_bogota_SI, map_bogota_WP, nrow = 6)
+```
+
+- Mexico City, Mexico
+
+```{r}
+map_mexico_city_AM <- tm_shape(mexico_city_boundaries) + tm_borders() + tm_shape(mexico_city_uc) + tm_fill() + tm_shape(mexico_city_AM) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_mexico_city_BH <- tm_shape(mexico_city_boundaries) + tm_borders() + tm_shape(mexico_city_uc) + tm_fill() + tm_shape(mexico_city_BH) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_mexico_city_NL <- tm_shape(mexico_city_boundaries) + tm_borders() + tm_shape(mexico_city_uc) + tm_fill() + tm_shape(mexico_city_NL) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_mexico_city_PE <- tm_shape(mexico_city_boundaries) + tm_borders() + tm_shape(mexico_city_uc) + tm_fill() + tm_shape(mexico_city_PE) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_mexico_city_SI <- tm_shape(mexico_city_boundaries) + tm_borders() + tm_shape(mexico_city_uc) + tm_fill() + tm_shape(mexico_city_SI) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_mexico_city_WP <- tm_shape(mexico_city_boundaries) + tm_borders() + tm_shape(mexico_city_uc) + tm_fill() + tm_shape(mexico_city_WP) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+```
+
+```{r, fig.height=6, fig.width=1}
+tmap_arrange(map_mexico_city_AM, map_mexico_city_BH, map_mexico_city_NL, map_mexico_city_PE, map_mexico_city_SI, map_mexico_city_WP, nrow = 6)
+```
+
+```{r, fig.height=10, fig.height=30}
+tmap_arrange(map_sao_paulo_AM, map_bogota_AM, map_mexico_city_AM, map_sao_paulo_BH, map_bogota_BH, map_mexico_city_BH, map_sao_paulo_NL, map_bogota_NL, map_mexico_city_NL, map_sao_paulo_PE, map_bogota_PE, map_mexico_city_PE, map_sao_paulo_SI, map_bogota_SI, map_mexico_city_SI, map_sao_paulo_WP, map_bogota_WP, map_mexico_city_WP, nrow = 6)
+```
+
+```{r, fig.height=10, fig.width=15}
+tmap_arrange(map_sao_paulo_AM, map_sao_paulo_BH, map_sao_paulo_NL, map_sao_paulo_PE, map_sao_paulo_SI, map_sao_paulo_WP, map_bogota_AM, map_bogota_BH, map_bogota_NL, map_bogota_PE, map_bogota_SI, map_bogota_WP, map_mexico_city_AM, map_mexico_city_BH, map_mexico_city_NL, map_mexico_city_PE, map_mexico_city_SI, map_mexico_city_WP, nrow = 3)
+```
+
+```{r}
+map_pasto_AM <- tm_shape(pasto_boundaries) + tm_borders() + tm_shape(pasto_uc) + tm_fill() + tm_shape(pasto_AM) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_pasto_BH <- tm_shape(pasto_boundaries) + tm_borders() + tm_shape(pasto_uc) + tm_fill() + tm_shape(pasto_BH) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_pasto_NL <- tm_shape(pasto_boundaries) + tm_borders() + tm_shape(pasto_uc) + tm_fill() + tm_shape(pasto_NL)+ tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_pasto_PE <- tm_shape(pasto_boundaries) + tm_borders() + tm_shape(pasto_uc) + tm_fill() + tm_shape(pasto_PE) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_pasto_SI <- tm_shape(pasto_boundaries) + tm_borders() + tm_shape(pasto_uc) + tm_fill() + tm_shape(pasto_SI) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_pasto_WP <- tm_shape(pasto_boundaries) + tm_borders() + tm_shape(pasto_uc) + tm_fill() + tm_shape(pasto_WP) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+```
+
+```{r}
+map_assis_AM <- tm_shape(assis_boundaries) + tm_borders() + tm_shape(assis_uc) + tm_fill() + tm_shape(assis_AM) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_assis_BH <- tm_shape(assis_boundaries) + tm_borders() + tm_shape(assis_uc) + tm_fill() + tm_shape(assis_BH) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_assis_NL <- tm_shape(assis_boundaries) + tm_borders() + tm_shape(assis_uc) + tm_fill() + tm_shape(assis_NL) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_assis_PE <- tm_shape(assis_boundaries) + tm_borders() + tm_shape(assis_uc) + tm_fill() + tm_shape(assis_PE) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_assis_SI <- tm_shape(assis_boundaries) + tm_borders() + tm_shape(assis_uc) + tm_fill() + tm_shape(assis_SI) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_assis_WP <- tm_shape(assis_boundaries) + tm_borders() + tm_shape(assis_uc) + tm_fill() + tm_shape(assis_WP) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+```
+
+```{r}
+map_sat_AM <- tm_shape(sat_boundaries) + tm_borders() + tm_shape(sat_uc) + tm_fill() + tm_shape(sat_AM) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sat_BH <- tm_shape(sat_boundaries) + tm_borders() + tm_shape(sat_uc) + tm_fill() + tm_shape(sat_BH) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sat_NL <- tm_shape(sat_boundaries) + tm_borders() + tm_shape(sat_uc) + tm_fill() + tm_shape(sat_NL) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sat_PE <- tm_shape(sat_boundaries) + tm_borders() + tm_shape(sat_uc) + tm_fill() + tm_shape(sat_PE) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sat_SI <- tm_shape(sat_boundaries) + tm_borders() + tm_shape(sat_uc) + tm_fill() + tm_shape(sat_SI) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+map_sat_WP <- tm_shape(sat_boundaries) + tm_borders() + tm_shape(sat_uc) + tm_fill() + tm_shape(sat_WP) + tm_fill(col = "red") + tm_layout(frame = FALSE)
+```
+
+```{r, fig.height=10, fig.height=15}
+tmap_arrange(map_assis_AM, map_assis_BH, map_assis_NL, map_assis_PE, map_assis_SI, map_assis_WP, map_pasto_AM, map_pasto_BH, map_pasto_NL, map_pasto_PE, map_pasto_SI, map_pasto_WP, map_sat_AM, map_sat_BH, map_sat_NL, map_sat_PE, map_sat_SI, map_sat_WP, nrow = 3)
+```
+

@@ -1,0 +1,283 @@
+---
+title: "Entropy"
+output: html_document
+date: "2023-07-11"
+---
+
+# Setting up 
+
+```{r, message=FALSE, warning=FALSE}
+library(sf)
+library(dplyr)
+library(SpatEntropy)
+library(maptools)
+```
+
+# Reading in data
+
+setting up procedure for reading in cluster and changing cluster object to sp
+
+```{r}
+# basic procedure 
+input_path <- "data/cluster/"
+files <- list.files(input_path, pattern = "[.]gpkg$", full.names=T)
+for (f in files){
+  # read in file
+  shp <- st_read(f) 
+  shp <- shp %>% st_transform(3857)
+  # calculate centroid 
+  shp_cent <- st_centroid(shp)
+  # filter to grids that are classified as hotspots
+  shp_AM <- shp_cent %>% 
+    filter(., econ_cluster_AM == 1) 
+  shp_BH <- shp_cent %>% 
+    filter(., econ_cluster_BH == 1) 
+  shp_NL <- shp_cent %>% 
+    filter(., econ_cluster_NL == 1) 
+  shp_PE <- shp_cent %>% 
+    filter(., econ_cluster_PE == 1) 
+  shp_SI <- shp_cent %>% 
+    filter(., econ_cluster_SI == 1) 
+  shp_WP <- shp_cent %>% 
+    filter(., econ_cluster_WP == 1) 
+  # Convert to sp objects
+  shp_AM <- as_Spatial(shp_AM)
+  shp_BH <- as_Spatial(shp_BH)
+  shp_NL <- as_Spatial(shp_NL)
+  shp_PE <- as_Spatial(shp_PE)
+  shp_SI <- as_Spatial(shp_SI)
+  shp_WP <- as_Spatial(shp_WP)
+  # get name to save
+  shp_name <- gsub(".*data/cluster/(.+)_cluster.gpkg*.", "\\1", f)
+  shp_name_AM <- paste0(shp_name, "_AM")
+  shp_name_BH <- paste0(shp_name, "_BH")
+  shp_name_NL <- paste0(shp_name, "_NL")
+  shp_name_PE <- paste0(shp_name, "_PE")
+  shp_name_SI <- paste0(shp_name, "_SI")
+  shp_name_WP <- paste0(shp_name, "_WP")
+  # save with new name
+  assign(shp_name_AM, shp_AM, envir = .GlobalEnv)
+  assign(shp_name_BH, shp_BH, envir = .GlobalEnv)
+  assign(shp_name_NL, shp_NL, envir = .GlobalEnv)
+  assign(shp_name_PE, shp_PE, envir = .GlobalEnv)
+  assign(shp_name_SI, shp_SI, envir = .GlobalEnv)
+  assign(shp_name_WP, shp_WP, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+rm(shp_cent)
+rm(shp_AM)
+rm(shp_BH)
+rm(shp_NL)
+rm(shp_PE)
+rm(shp_SI)
+rm(shp_WP)
+```
+
+Read in the boundaries for cities and convert into sp objects
+
+```{r}
+# basic procedure
+input_path_boundaries <- "data/boundaries/"
+files_boundaries <- list.files(input_path_boundaries, pattern = "[.]shp$", full.names=T)
+for (f in files_boundaries){
+  # read in file
+  shp <- st_read(f)
+  shp <- shp %>% st_transform(3857)
+  # Convert to sp objects
+  shp_sp <- as_Spatial(shp)
+  # get name to save
+  shp_name <- gsub(".*data/boundaries/(.+).shp", "\\1", f)
+  # save with new name
+  assign(paste(shp_name), shp_sp, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+rm(shp_sp)
+```
+
+
+# Analysis
+
+### Create ppp object
+
+```{r}
+# function to create a list of window objects for each city by reading each polygon as a window
+polygon_to_window = function(x){
+  p = list()
+  for(i in 1:nrow(x)){
+    p[[i]] <- as.owin(x[i,])
+  }
+  return(p)
+}
+```
+
+
+```{r}
+# basic procedure
+spolygondfs <- Filter(function(x) is(x, "SpatialPolygonsDataFrame"), mget(ls()))
+
+# run the function on all spatialpolygondataframes
+for (n in 1:length(spolygondfs)){
+  window_list <- polygon_to_window(spolygondfs[[n]])
+  city_name <- gsub("(.+)_boundaries.*", "\\1", names(spolygondfs)[n])
+  list_name <- paste0(city_name, "_window_list") 
+  assign(list_name, window_list, envir = .GlobalEnv)
+}
+# remove temporary files 
+rm(window_list)
+```
+
+
+# creation of tess objects
+
+```{r}
+# get list of lists
+owins <- mget(grep('window_list', names(which(unlist(eapply(.GlobalEnv,is.list)))), value = TRUE))
+for (i in 1:length(owins)){
+  city_tess <- as.tess(owins[[i]])
+  city_name <- gsub("(.+)_window_list.*", "\\1", names(owins)[i])
+  tess_name <- paste0(city_name, "_tess") 
+  assign(tess_name, city_tess, envir = .GlobalEnv)
+}
+# remove temporary files
+rm(city_tess)
+```
+
+Extract coordinates from SpatialPointsDataFrame and create a ‘ppp’ (point pattern) object
+
+```{r}
+# basic procedure
+spointdfs <- Filter(function(x) is(x, "SpatialPointsDataFrame"), mget(ls()))
+
+for (i in 1:length(spointdfs)){
+  pts <- coordinates(spointdfs[[i]])
+  # specify pattern of owin 
+  city_pattern = substr(names(spointdfs)[i], 1, 8)
+  # select owin object
+  list_df_tess <- Filter(function(x) is(x, "tess"), mget(ls(pattern = city_pattern)))
+  df_owin <- list_df_tess[[1]][["window"]]
+  # create ppp object
+  p <- ppp(pts[,1], pts[,2], window = df_owin)
+  ppp_name <- paste0(names(spointdfs)[i], "_ppp") 
+  assign(ppp_name, p, envir = .GlobalEnv)
+}
+# remove temporary files
+rm(pts)
+rm(p)
+rm(list_df_tess)
+rm(df_owin)
+```
+calculation of entropy (Batty)
+
+```{r}
+# list all files for each country 
+ppps <- Filter(function(x) is(x, "ppp"), mget(ls()))
+```
+
+calculate Batty's entropy - made edits to code to avoid error
+
+```{r}
+batty_entropy <- function (data, category = 1, cell.size = 1, partition = 10) 
+{
+    if (!is.matrix(data) & !spatstat.geom::is.ppp(data)) 
+        stop("For grid data, please provide the dataset as a matrix;\n        for point pattern data, please provide the dataset as a ppp object")
+    if (spatstat.geom::is.ppp(data) & !spatstat.geom::is.marked(data) & 
+        category != 1) 
+        stop("Since data do not have different categories, please set category to the default 1")
+    if (is.matrix(data)) 
+        datavec = c(data)
+    else if (spatstat.geom::is.marked(data)) 
+        datavec = spatstat.geom::marks(data)
+    else datavec = rep(1, spatstat.geom::npoints(data))
+    if (is.factor(datavec)) 
+        datavec = as.character(datavec)
+    if (length(which(unique(datavec) == category)) == 0) 
+        stop("Please choose a category that is present in the dataset.\n           If the point pattern is unmarked, category must be set to 1")
+    datavec = as.numeric(datavec == category)
+    datavec[is.na(datavec)] = 0
+    if (is.matrix(data)) {
+        ncl = ncol(data)
+        nrw = nrow(data)
+        W = spatstat.geom::owin(xrange = c(0, ncl * cell.size), 
+            yrange = c(0, nrw * cell.size))
+        xx.c = seq(cell.size/2, (ncl * cell.size - cell.size/2), 
+            l = ncl)
+        yy.c = rev(seq(cell.size/2, (nrw * cell.size - cell.size/2), 
+            l = nrw))
+        coords = expand.grid(yy.c, xx.c)
+        data.pp = spatstat.geom::ppp(x = coords[, 2], y = coords[, 
+            1], window = W)
+        spatstat.geom::marks(data.pp) = datavec
+    }
+    if (spatstat.geom::is.ppp(data)) {
+        W = data$window
+        data.pp = data
+        spatstat.geom::marks(data.pp) = datavec
+    }
+    if (is.numeric(partition) | is.matrix(partition)) 
+        areap = spatstat.geom::dirichlet(areapart(data, G = partition, 
+            cell.size = cell.size)$G.pp)
+    else if (spatstat.geom::is.tess(partition)) {
+        if (partition$window$xrange[1] != W$xrange[1] | partition$window$xrange[2] != 
+            W$xrange[2] | partition$window$yrange[1] != W$yrange[1] | 
+            partition$window$yrange[2] != W$yrange[2]) 
+            stop("The given partition is not on the same observation window as the data")
+        if (is.null(partition$tiles)) 
+            stop("If a tessellation is provided, it should contain tiles")
+        areap <- partition
+    }
+    else stop("please provide the area partition object in an accepted format.\n                      If a tessellation is provided, it should contain tiles")
+    n.G = areap$n
+    tot.pG = sum(datavec)
+    pg = Tg = numeric(n.G)
+    for (gg in 1:n.G) {
+        subd = data.pp[areap$tiles[[gg]]]
+        datatab = table(spatstat.geom::marks(subd))
+        if (length(datatab[which(names(datatab) == 1)]) == 1) 
+            pg[gg] = datatab[which(names(datatab) == 1)]/tot.pG
+        Tg[gg] = spatstat.geom::area.owin(areap$tiles[[gg]])
+        if (is.na(Tg[gg])) 
+            Tg[gg] = table(areap$tiles[[gg]]$m)[which(names(table(areap$tiles[[gg]]$m)) == 
+                T)] * spatstat.geom::area.owin(data.pp$window)/(nrow(areap$tiles[[gg]]$m) * 
+                ncol(areap$tiles[[gg]]$m))
+    }
+    G.count = data.frame(1:n.G, pg * tot.pG, pg, Tg)
+    colnames(G.count) = c("area.id", "abs.freq", "rel.freq", 
+        "area.size")
+    if (sum(Tg) == 1) {
+        Tg = Tg * 100
+        warning("The total observation area is 1, which returns problems in the computation of Batty's entropy, since the maximum is log(1)=0.\n      For this reason, during the computation all areas are multiplied by 100.")
+    }
+    batty.terms = ifelse(G.count[, 2] > 0, G.count[, 3] * log(Tg/G.count[, 
+        3]), 0)
+    batty.ent = sum(batty.terms)
+    return(list(areas.tess = areap, areas.freq = G.count, batty = batty.ent, 
+        rel.batty = batty.ent/log(sum(Tg))))
+}
+
+```
+
+## Brazil
+
+```{r}
+for (i in 1:length(ppps)){
+  # specify pattern of owin 
+  city_pattern = substr(names(ppps)[i], 1, 8)
+  # select tess object
+  list_tess <- Filter(function(x) is(x, "tess"), mget(ls(pattern = city_pattern)))
+  partition_tess <- list_tess[[1]]
+  batty_ent = batty_entropy(unmark(ppps[[i]]), partition = partition_tess) 
+  file_name <- gsub("(.+)_ppp.*", "\\1", names(ppps)[i])
+  batty_ent_name <- paste0(file_name, "_batty") 
+  assign(batty_ent_name, batty_ent, envir = .GlobalEnv)
+}
+```
+
+
+
+
+
+
+
+

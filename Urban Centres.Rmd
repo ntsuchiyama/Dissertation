@@ -1,0 +1,96 @@
+---
+title: "Urban Centres"
+output: html_document
+date: "2023-08-14"
+---
+
+# Setting up
+
+```{r}
+library(sf)
+library(dplyr)
+```
+
+# Reading in the data
+
+- Urban Centre
+
+```{r}
+uc <- st_read("urban_centre.gpkg") %>% st_transform(3857)
+```
+
+
+- FUAs
+
+```{r}
+# basic procedure
+input_path_fua <- "data/FUA/"
+files_fua <- list.files(input_path_fua, pattern = "[.]gpkg$", full.names=T)
+for (f in files_fua){
+  # read in file
+  shp <- st_read(f)
+  shp <- shp %>% st_transform(3857)
+  # get name to save
+  shp_name <- gsub(".*data/FUA/(.+).gpkg", "\\1", f)
+  # save with new name
+  assign(paste(shp_name), shp, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+```
+
+# Count GDP
+
+```{r}
+# get list of data - FUA
+fua_dfs <- mget(grep('_fua', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+- get intersections
+
+```{r}
+for(i in 1:length(fua_dfs)) {
+  uc_city <- st_intersection(uc, fua_dfs[[i]])
+  city_name <- gsub("(.+)_fua", "\\1", names(fua_dfs)[i])
+  df_name_uc <- paste0(city_name, "_uc")
+  assign(df_name_uc, uc_city, envir = .GlobalEnv)
+}
+rm(uc_city)
+```
+
+```{r}
+# get list of data - uc
+uc_dfs <- mget(grep('_uc', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# create data frame
+for(i in 1:length(uc_dfs)){
+  uc_sum <- uc_dfs[[i]] %>%
+    summarise(
+      gdp_1990_sum = sum(GDP90_SM),
+      gdp_2000_sum = sum(GDP00_SM), 
+      gdp_2015_sum = sum(GDP15_SM)) %>%
+    st_drop_geometry() %>%
+    mutate(city_name = gsub("(.+)_uc", "\\1", names(uc_dfs)[i]))
+  assign(names(uc_dfs)[i], uc_sum, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# get list of data again
+uc_dfs <- mget(grep('_uc', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# bind the results
+uc_gdp <- bind_rows(uc_dfs)
+```
+
+# Export 
+
+```{r}
+# export the results
+write.csv(uc_gdp, "data/uc_gdp.csv", row.names=TRUE)
+```
+

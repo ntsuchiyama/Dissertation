@@ -1,0 +1,235 @@
+---
+title: "Other"
+output: html_document
+date: "2023-08-01"
+---
+
+# Setting up
+
+```{r}
+library(ggplot2)
+library(corrplot)
+library(dplyr)
+library(tidyverse)
+library(knitr)
+```
+
+
+# Reading in the data
+
+```{r}
+cluster_results <- read.csv("data/cluster_results.csv")
+cluster_uc <- read.csv("data/cluster_uc.csv")
+```
+
+cleaning the data
+
+```{r}
+# calculate the percentages 
+cluster_results <- cluster_results %>%
+  left_join(cluster_uc, by = "X") %>%
+  rename(city_name = X) %>%
+  mutate(AM_per = econ_cluster_AM/n_grids, 
+         BH_per = econ_cluster_BH/n_grids, 
+         NL_per = econ_cluster_NL/n_grids,
+         PE_per = econ_cluster_PE/n_grids,
+         SI_per = econ_cluster_SI/n_grids, 
+         WP_per = econ_cluster_WP/n_grids, 
+         AM_per_uc = econ_cluster_AM_uc/econ_cluster_AM, 
+         BH_per_uc = econ_cluster_BH_uc/econ_cluster_BH, 
+         NL_per_uc = econ_cluster_NL_uc/econ_cluster_NL, 
+         PE_per_uc = econ_cluster_PE_uc/econ_cluster_PE, 
+         SI_per_uc = econ_cluster_SI_uc/econ_cluster_SI,
+         WP_per_uc = econ_cluster_WP_uc/econ_cluster_WP)
+```
+
+# Analysis 
+
+## Proportion against number of grids
+
+```{r}
+# extract only the percentage columns
+cluster_results_per <- cluster_results %>%
+  select(city_name, AM_per, BH_per, NL_per, PE_per, SI_per, WP_per)
+```
+
+```{r}
+# columns into rows 
+cluster_per_pivot <- cluster_results_per %>% pivot_longer(!city_name, names_to = "data_source", values_to = "proportion")
+```
+
+### summary stats
+
+```{r}
+cluster_per_sum_stats <- cluster_per_pivot %>% 
+  group_by(data_source) %>%
+  summarise(
+    mean = round(mean(proportion, na.rm = TRUE), 4),
+    sd = round(sd(proportion, na.rm = TRUE), 4)
+  )
+
+print(cluster_per_sum_stats)
+```
+
+```{r}
+knitr::kable(cluster_per_sum_stats, format = "html")
+```
+
+
+### distribution of the values 
+
+```{r}
+# reorder
+cluster_per_pivot_reorder <- cluster_per_pivot %>%
+  mutate(data_source = fct_reorder(data_source, proportion, .fun='median')) 
+```
+
+```{r}
+# distribution 
+cluster_per_plot <- ggplot(cluster_per_pivot_reorder, aes(x=reorder(data_source, proportion), y=proportion)) + 
+    geom_boxplot(fill="slateblue", alpha=0.2) + 
+    xlab("Data Source") + ylab("Proportion") + 
+    theme(axis.text.x = element_text(size = 7.5))
+cluster_per_plot
+```
+
+
+### correlation plot 
+
+```{r}
+# calculate correlation coefficient for each pair
+cluster_results_cor <- cor(cluster_results_per[2:7])
+```
+
+```{r}
+# compute the p-value for a matrix
+# mat : is a matrix of data
+# ... : further arguments to pass to the native R cor.test function
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+
+# matrix of the p-value of the correlation
+p.mat_per <- cor.mtest(cluster_results_per[2:7])
+```
+
+produce plot
+
+```{r}
+col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
+corrplot(cluster_results_cor, method="color", col=col(200),
+         addCoef.col = "black",
+         # Add coefficient of correlation
+         tl.col="black", tl.srt=45, #Text label color and rotation
+         # Combine with significance
+         p.mat = p.mat_per, sig.level = 0.05, insig = 'pch', pch.col = "grey",
+         # hide correlation coefficient on the principal diagonal
+         diag=FALSE
+         )
+
+```
+
+
+## Proportion against number of grids
+
+```{r}
+# extract only the percentage columns
+cluster_results_uc <- cluster_results %>%
+  select(city_name, AM_per_uc, BH_per_uc, NL_per_uc, PE_per_uc, SI_per_uc, WP_per_uc)
+```
+
+```{r}
+# columns into rows 
+cluster_uc_pivot <- cluster_results_uc %>% pivot_longer(!city_name, names_to = "data_source", values_to = "proportion")
+```
+
+
+### distribution of the values
+
+```{r}
+# reorder
+cluster_uc_pivot_reorder <- cluster_uc_pivot %>%
+  mutate(data_source = fct_reorder(data_source, proportion, .fun='median')) 
+```
+
+```{r}
+# distribution 
+cluster_uc_plot <- ggplot(cluster_uc_pivot_reorder, aes(x=proportion, color = data_source, fill = data_source)) + 
+    geom_histogram(alpha=0.2, bins = 10) + facet_wrap(~data_source)
+cluster_uc_plot
+```
+
+```{r}
+# distribution 
+cluster_uc_plot_2 <- ggplot(cluster_uc_pivot_reorder, aes(x=reorder(data_source, proportion), y=proportion)) + 
+    geom_boxplot(fill="slateblue", alpha=0.2) + 
+    xlab("Data Source") + ylab("Proportion") + 
+    theme(axis.text.x = element_text(size = 7.5))
+cluster_uc_plot_2
+```
+
+### summary stats
+
+```{r}
+cluster_uc_sum_stats <- cluster_uc_pivot %>% 
+  group_by(data_source) %>%
+  summarise(
+    mean = round(mean(proportion, na.rm = TRUE), 3),
+    sd = round(sd(proportion, na.rm = TRUE), 3)
+  )
+
+print(cluster_uc_sum_stats)
+```
+
+```{r}
+knitr::kable(cluster_uc_sum_stats, format = "html")
+```
+
+### correlation plot
+
+```{r}
+# calculate correlation coefficient 
+cluster_uc_cor <- cor(cluster_results_uc[2:7])
+
+# matrix of the p-value of the correlation
+p.mat_uc <- cor.mtest(cluster_results_uc[2:7])
+```
+```{r}
+corrplot(cluster_uc_cor, method="color", col=col(200),
+         addCoef.col = "black",
+         # Add coefficient of correlation
+         tl.col="black", tl.srt=45, #Text label color and rotation
+         # Combine with significance
+         p.mat = p.mat_uc, sig.level = 0.05, insig = 'pch', pch.col = "grey",
+         # hide correlation coefficient on the principal diagonal
+         diag=FALSE
+         )
+
+```
+
+
+
+# Create outputs
+
+```{r}
+# subset the data to percentages 
+cluster_results_prop <- cluster_results %>%
+  select(city_name, AM_per, BH_per, NL_per, PE_per, SI_per, WP_per, AM_per_uc, BH_per_uc, NL_per_uc, PE_per_uc, SI_per_uc, WP_per_uc)
+```
+
+```{r}
+# export the results
+write.csv(cluster_results_prop, "data/cluster_results_prop.csv", row.names=FALSE)
+```
+

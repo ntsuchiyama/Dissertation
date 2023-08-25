@@ -1,0 +1,539 @@
+---
+title: "comparing cities"
+output: html_document
+date: "2023-08-04"
+---
+
+# Setting up
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(sf)
+library(ggplot2)
+library(reshape2)
+library(stringr)
+library(hrbrthemes)
+library(gridExtra)
+```
+
+# Reading in the data
+
+```{r}
+cluster <- read.csv("data/cluster_results_prop.csv")
+entropy <- read.csv("data/entropy_results_mean.csv")
+nmi <- read.csv("data/nmi_results.csv")
+fua_geom <- st_read("fua.gpkg")
+fua <- fua_geom %>% st_drop_geometry()
+uc_gdp <- read.csv("data/uc_gdp.csv")
+shannon <- read.csv("data/shannon_entropy_output.csv")
+```
+
+## cleaning the data
+
+clean fua data to merge with FUA_data
+
+```{r}
+# select the columns to keep
+fua_cleaned <- fua %>% select(UC_num, eFUA_name, Commuting, Cntry_ISO, FUA_area, UC_area, FUA_p_2015, UC_p_2015, Com_p_2015)
+
+# convert city names to all lowercase and change space to underscore and other characters
+fua_cleaned$eFUA_name <- tolower(fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub(" ", "_", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("í", "i", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("é", "e", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ç", "c", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("-", "_", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("â", "a", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ú", "u", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("á", "a", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ó", "o", fua_cleaned$eFUA_name)
+fua_cleaned$eFUA_name <- gsub("ã", "a", fua_cleaned$eFUA_name)
+  
+# create city_name column
+fua_cleaned$city_name <- paste0(fua_cleaned$Cntry_ISO, "_", fua_cleaned$eFUA_name)
+
+# remove ISO and Cities column and then bring city_name to front 
+fua_cleaned <- subset(fua_cleaned, select = -c(Cntry_ISO, eFUA_name))
+```
+
+solve the issue for multiple cities with separate rows
+
+```{r}
+fua_cleaned_2 <- fua_cleaned %>%
+  relocate(city_name) %>%
+  group_by(city_name) %>%
+  summarise(UC_num = sum(UC_num, na.rm = TRUE),
+            FUA_area  = sum(FUA_area, na.rm = TRUE), 
+            UC_area = sum(UC_area, na.rm = TRUE), 
+            FUA_p_2015 = sum(FUA_p_2015, na.rm = TRUE), 
+            UC_p_2015 = sum(UC_p_2015, na.rm = TRUE), 
+            Com_p_2015 = sum(Com_p_2015, na.rm = TRUE))
+```
+
+create df for merging
+
+```{r}
+# join with cities column
+fua_cleaned_2 <- fua_cleaned_2 %>% 
+  mutate(FUA_pop_density = FUA_p_2015/FUA_area,
+         UC_pop_density = UC_p_2015/UC_area,
+         UC_FUA_pop_ratio = UC_p_2015/FUA_p_2015,
+         UC_FUA_area_ratio = UC_area/FUA_area,
+         UC_FUA_pop_density_ratio = UC_pop_density/FUA_pop_density) %>% 
+  select(-Com_p_2015)
+```
+
+make mergable by column name
+
+```{r}
+colnames(shannon)[1] <- "city_name"
+```
+
+
+merge the dataframes
+
+```{r}
+results <- fua_cleaned_2 %>% 
+  left_join(cluster, by = "city_name") %>%
+  left_join(entropy, by = "city_name") %>% 
+  left_join(nmi, by = "city_name") %>%
+  left_join(shannon, by = "city_name") %>%
+  left_join(uc_gdp, by = "city_name")
+
+# remove the rows with no data 
+results <- results %>%
+  filter(!is.na(AM_per))
+
+# convert city_column to row index
+results <- results %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="city_name")
+```
+
+# Analysis 
+
+add additional columns 
+
+```{r}
+results$log_pop <- log(results$FUA_p_2015)
+results$log_gdp <- log(results$gdp_2015_sum)
+results$gdp_per_capita <- (results$gdp_2015_sum)/(results$UC_p_2015)
+```
+
+
+## Shannon Entropy - absolute
+
+```{r}
+# subset to columns
+results_entropyS <- results %>%
+  select(FUA_p_2015, UC_FUA_pop_density_ratio, gdp_2015_sum, log_pop, log_gdp, gdp_per_capita, FUA_pop_density, Shannon_Absolute_AM, Shannon_Absolute_BH, Shannon_Absolute_NL, Shannon_Absolute_PE, Shannon_Absolute_SI, Shannon_Absolute_WP, )
+```
+
+```{r}
+# melt data
+entropyS <- melt(results_entropyS, id.vars = c("FUA_p_2015", "UC_FUA_pop_density_ratio", "gdp_2015_sum", "log_pop", "log_gdp", "gdp_per_capita", "FUA_pop_density"))
+```
+
+```{r}
+# clean data - replace data source name, identify value
+entropyS$data_source <- str_sub(entropyS$variable, -2, -1)
+entropyS$shannon_entropy <- entropyS$value
+
+# drop unnecessary columns
+entropyS <- entropyS %>% select(-c(value, variable))
+```
+
+### visualise
+
+```{r, fig.height=10, fig.width=15}
+ggplot(entropyS, aes(x = log_pop, y = shannon_entropy)) + geom_point(size = 1) + geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="log(population)", y = "Shannon's Entropy") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0, 4))
+```
+
+```{r, fig.height=10, fig.width=15}
+ggplot(entropyS, aes(x = gdp_per_capita, y = shannon_entropy)) + geom_point(size = 1) + geom_smooth(method=lm, color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="GDP per capita", y = "Shannon's Entropy") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0, 4))
+```
+
+## Shannon entropy - relative
+
+```{r}
+# subset to columns
+results_entropyS_2 <- results %>%
+  select(FUA_p_2015, UC_FUA_pop_density_ratio, gdp_2015_sum, log_pop, log_gdp, gdp_per_capita, Shannon_Relative_AM, Shannon_Relative_BH, Shannon_Relative_NL, Shannon_Relative_PE, Shannon_Relative_SI, Shannon_Relative_WP)
+```
+
+```{r}
+# melt data
+entropyS_2 <- melt(results_entropyS_2, id.vars = c("FUA_p_2015", "UC_FUA_pop_density_ratio", "gdp_2015_sum", "log_pop", "log_gdp", "gdp_per_capita"))
+```
+
+```{r}
+# clean data - replace data source name, identify value
+entropyS_2$data_source <- str_sub(entropyS_2$variable, -2, -1)
+entropyS_2$shannon_entropy <- entropyS_2$value
+
+# drop unnecessary columns
+entropyS_2 <- entropyS_2 %>% select(-c(value, variable))
+```
+
+```{r, fig.height=10, fig.width=15}
+ggplot(entropyS_2, aes(x = log_pop, y = shannon_entropy)) + geom_point(size = 1) + geom_smooth(method=lm, color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="log(population)", y = "Relative Shannon's Entropy") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0, 1))
+```
+
+```{r, fig.height=10, fig.width=15}
+ggplot(entropyS_2, aes(x = gdp_per_capita, y = shannon_entropy)) + geom_point(size = 1) + geom_smooth(method=lm, color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="GDP per capita", y = "Relative Shannon's Entropy") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0, 1))
+```
+
+## Batty Entropy 
+
+```{r}
+# subset to columns
+results_entropyB <- results %>%
+  select(FUA_p_2015, UC_FUA_pop_density_ratio, log_pop, log_gdp, gdp_2015_sum,gdp_per_capita, entropy_AM_50, entropy_BH_50, entropy_NL_50, entropy_PE_50, entropy_SI_50, entropy_WP_50)
+```
+
+```{r}
+# melt data
+entropyB <- melt(results_entropyB, id.vars = c("FUA_p_2015", "UC_FUA_pop_density_ratio", "gdp_2015_sum", "log_pop", "log_gdp", "gdp_per_capita"))
+```
+
+```{r}
+# clean data - replace data source name, identify value
+entropyB$data_source <- str_sub(entropyB$variable, 9, 10)
+entropyB$batty_entropy <- entropyB$value
+
+# drop unnecessary columns
+entropyB <- entropyB %>% select(-c(value, variable))
+```
+
+### visualisation
+
+```{r, fig.height=10, fig.width=15}
+ggplot(entropyB, aes(x = log_pop, y = batty_entropy)) + geom_point(size = 1) + geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="log(population)", y = "Relative Batty's Entropy") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0.84, 0.96))
+
+```
+
+
+```{r, fig.height=10, fig.width=15}
+ggplot(entropyB, aes(x = gdp_per_capita, y = batty_entropy))  + geom_point(size = 1) + geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="GDP per capita", y = "Relative Batty's Entropy") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0.84, 0.96))
+```
+
+```{r, fig.height=10, fig.width=15}
+ggplot(entropyB, aes(x = UC_FUA_pop_density_ratio, y = batty_entropy))  + geom_point(size = 1) + geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="Population density ratio (UC/FUA)", y = "NMI with Predicted Employment") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0.84, 0.96))
+```
+
+## NMI
+
+```{r}
+# subset to columns
+results_nmiPE <- results %>%
+  select(FUA_p_2015, UC_FUA_pop_density_ratio, gdp_2015_sum, log_pop, log_gdp, nmi.AM.PE, nmi.BH.PE, nmi.NL.PE, nmi.PE.SI, nmi.PE.WP, gdp_per_capita)
+```
+
+```{r}
+# melt data
+nmiPE <- melt(results_nmiPE, id.vars = c("FUA_p_2015", "UC_FUA_pop_density_ratio", "gdp_2015_sum", "log_pop", "log_gdp", "gdp_per_capita"))
+```
+
+```{r}
+# clean data - replace data source name, identify value
+nmiPE <- nmiPE %>% 
+  mutate(nmi_PE = value,
+         data_source = if_else(variable == "nmi.AM.PE"|variable == "nmi.BH.PE"|variable == "nmi.NL.PE", str_sub(variable, -5, -4), str_sub(variable, -2, -1)))
+
+# drop unnecessary columns
+nmiPE <- nmiPE %>% select(-c(value, variable))
+```
+
+### visualisation
+
+```{r, fig.height=10, fig.width=15}
+ggplot(nmiPE, aes(x = log_pop, y = nmi_PE)) + geom_point(size = 1) + geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="log(population)", y = "NMI with Predicted Employment") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0, 1.0))
+```
+
+
+```{r, fig.height=10, fig.width=15}
+ggplot(nmiPE, aes(x = gdp_per_capita, y = nmi_PE)) + geom_point(size = 1) + geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="log(gdp)", y = "NMI with Predicted Employment") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0, 1.0))
+```
+
+```{r, fig.height=10, fig.width=15}
+ggplot(nmiPE, aes(x = UC_FUA_pop_density_ratio, y = nmi_PE)) + geom_point(size = 1) + geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + facet_wrap(~data_source, scales = "free")+ labs(x ="Population density ratio (UC/FUA)", y = "NMI with Predicted Employment") + theme_classic(base_size = 20) + scale_y_continuous(limits = c(0, 1.0)) 
+```
+
+# Regression model
+
+```{r}
+lm_entropyS_pop_AM_2 <- lm(Shannon_Relative_AM ~ log_pop, data = results_entropyS_2)
+summary(lm_entropyS_pop_AM_2)
+```
+
+```{r}
+lm_entropyS_pop_BH_2 <- lm(Shannon_Relative_BH ~ log_pop, data = results_entropyS_2)
+summary(lm_entropyS_pop_BH_2)
+```
+
+```{r}
+lm_entropyS_pop_NL_2 <- lm(Shannon_Relative_NL ~ log_pop, data = results_entropyS_2)
+summary(lm_entropyS_pop_NL_2)
+```
+
+```{r}
+lm_entropyS_pop_PE_2 <- lm(Shannon_Relative_PE ~ log_pop, data = results_entropyS_2)
+summary(lm_entropyS_pop_PE_2)
+```
+
+```{r}
+lm_entropyS_pop_SI_2 <- lm(Shannon_Relative_SI ~ log_pop, data = results_entropyS_2)
+summary(lm_entropyS_pop_SI_2)
+```
+
+```{r}
+lm_entropyS_pop_WP_2 <- lm(Shannon_Relative_WP ~ log_pop, data = results_entropyS_2)
+summary(lm_entropyS_pop_WP_2)
+```
+```{r}
+lm_entropyS_pop_AM_2 <- lm(Shannon_Relative_AM ~ gdp_per_capita, data = results_entropyS_2)
+summary(lm_entropyS_pop_AM_2)
+```
+
+```{r}
+lm_entropyS_pop_BH_2 <- lm(Shannon_Relative_BH ~ gdp_per_capita, data = results_entropyS_2)
+summary(lm_entropyS_pop_BH_2)
+```
+
+```{r}
+lm_entropyS_pop_NL_2 <- lm(Shannon_Relative_NL ~ gdp_per_capita, data = results_entropyS_2)
+summary(lm_entropyS_pop_NL_2)
+```
+
+```{r}
+lm_entropyS_pop_PE_2 <- lm(Shannon_Relative_PE ~ gdp_per_capita, data = results_entropyS_2)
+summary(lm_entropyS_pop_PE_2)
+```
+
+```{r}
+lm_entropyS_pop_SI_2 <- lm(Shannon_Relative_SI ~ gdp_per_capita, data = results_entropyS_2)
+summary(lm_entropyS_pop_SI_2)
+```
+
+```{r}
+lm_entropyS_pop_WP_2 <- lm(Shannon_Relative_WP ~ gdp_per_capita, data = results_entropyS_2)
+summary(lm_entropyS_pop_WP_2)
+```
+
+## Shannon's entropy
+
+```{r}
+lm_entropyS_pop_AM <- lm(Shannon_Absolute_AM ~ log_pop, data = results_entropyS)
+summary(lm_entropyS_pop_AM)
+```
+
+```{r}
+lm_entropyS_pop_BH <- lm(Shannon_Absolute_BH ~ log_pop, data = results_entropyS)
+summary(lm_entropyS_pop_BH)
+```
+
+```{r}
+lm_entropyS_pop_NL <- lm(Shannon_Absolute_NL ~ log_pop, data = results_entropyS)
+summary(lm_entropyS_pop_NL)
+```
+
+```{r}
+lm_entropyS_pop_PE <- lm(Shannon_Absolute_PE ~ log_pop, data = results_entropyS)
+summary(lm_entropyS_pop_PE)
+```
+
+```{r}
+lm_entropyS_pop_SI <- lm(Shannon_Absolute_SI ~ log_pop, data = results_entropyS)
+summary(lm_entropyS_pop_SI)
+```
+
+```{r}
+lm_entropyS_pop_WP <- lm(Shannon_Absolute_WP ~ log_pop, data = results_entropyS)
+summary(lm_entropyS_pop_WP)
+```
+
+```{r}
+lm_entropyS_gdp_AM <- lm(Shannon_Absolute_AM ~ log_pop + gdp_per_capita, data = results_entropyS)
+summary(lm_entropyS_gdp_AM)
+```
+
+```{r}
+lm_entropyS_gdp_BH <- lm(Shannon_Absolute_BH~log_pop + gdp_per_capita, data = results_entropyS)
+summary(lm_entropyS_gdp_BH)
+```
+
+```{r}
+lm_entropyS_gdp_NL <- lm(Shannon_Absolute_NL~log_pop + gdp_per_capita, data = results_entropyS)
+summary(lm_entropyS_gdp_NL)
+```
+
+```{r}
+lm_entropyS_gdp_PE <- lm(Shannon_Absolute_PE~ log_pop + gdp_per_capita, data = results_entropyS)
+summary(lm_entropyS_gdp_PE)
+```
+
+```{r}
+lm_entropyS_gdp_SI <- lm(Shannon_Absolute_SI~log_pop + gdp_per_capita, data = results_entropyS)
+summary(lm_entropyS_gdp_SI)
+```
+
+```{r}
+lm_entropyS_gdp_WP <- lm(Shannon_Absolute_WP ~ log_pop + gdp_per_capita, data = results_entropyS)
+summary(lm_entropyS_gdp_WP)
+```
+
+## Batty's entropy
+
+```{r}
+lm_entropyB_pop_AM <- lm(entropy_AM_50 ~ log_pop, data = results_entropyB)
+summary(lm_entropyB_pop_AM)
+```
+
+```{r}
+lm_entropyB_pop_BH <- lm(entropy_BH_50 ~ log_pop, data = results_entropyB)
+summary(lm_entropyB_pop_BH)
+```
+
+```{r}
+lm_entropyB_pop_NL <- lm(entropy_NL_50 ~ log_pop, data = results_entropyB)
+summary(lm_entropyB_pop_NL)
+```
+
+```{r}
+lm_entropyB_pop_PE <- lm(entropy_PE_50 ~ log_pop, data = results_entropyB)
+summary(lm_entropyB_pop_PE)
+```
+
+```{r}
+lm_entropyB_pop_SI <- lm(entropy_SI_50 ~ log_pop, data = results_entropyB)
+summary(lm_entropyB_pop_SI)
+```
+
+```{r}
+lm_entropyB_pop_WP <- lm(entropy_WP_50 ~ log_pop, data = results_entropyB)
+summary(lm_entropyB_pop_WP)
+```
+
+```{r}
+lm_entropyB_gdp_AM <- lm(entropy_AM_50 ~ gdp_per_capita + log_pop, data = results_entropyB)
+summary(lm_entropyB_gdp_AM)
+```
+
+```{r}
+lm_entropyB_gdp_BH <- lm(entropy_BH_50 ~ log_pop + gdp_per_capita, data = results_entropyB)
+summary(lm_entropyB_gdp_BH)
+```
+
+```{r}
+lm_entropyB_gdp_NL <- lm(entropy_NL_50 ~ log_pop + gdp_per_capita, data = results_entropyB)
+summary(lm_entropyB_gdp_NL)
+```
+
+```{r}
+lm_entropyB_gdp_PE <- lm(entropy_PE_50 ~ log_pop + gdp_per_capita, data = results_entropyB)
+summary(lm_entropyB_gdp_PE)
+```
+
+```{r}
+lm_entropyB_gdp_SI <- lm(entropy_SI_50 ~ log_pop + gdp_per_capita, data = results_entropyB)
+summary(lm_entropyB_gdp_SI)
+```
+
+```{r}
+lm_entropyB_gdp_WP <- lm(entropy_WP_50 ~ log_pop + gdp_per_capita, data = results_entropyB)
+summary(lm_entropyB_gdp_WP)
+```
+
+## NMI
+
+```{r}
+lm_nmi_pop_AM <- lm(nmi.AM.PE ~ log_pop, data = results_nmiPE)
+summary(lm_nmi_pop_AM)
+```
+
+```{r}
+lm_nmi_pop_BH <- lm(nmi.BH.PE ~ log_pop, data = results_nmiPE)
+summary(lm_nmi_pop_BH)
+```
+
+```{r}
+lm_nmi_pop_NL <- lm(nmi.NL.PE ~ log_pop, data = results_nmiPE)
+summary(lm_nmi_pop_NL)
+```
+
+```{r}
+lm_nmi_pop_SI <- lm(nmi.PE.SI ~ I(1/log_pop), data = results_nmiPE)
+summary(lm_nmi_pop_SI)
+```
+
+```{r}
+lm_nmi_pop_WP <- lm(nmi.PE.WP ~ I(1/log_pop), data = results_nmiPE)
+summary(lm_nmi_pop_WP)
+```
+
+```{r}
+lm_nmi_gdp_AM <- lm(nmi.AM.PE ~ log_gdp, data = results_nmiPE)
+summary(lm_nmi_gdp_AM)
+```
+
+```{r}
+lm_nmi_gdp_BH <- lm(nmi.BH.PE ~ log_gdp, data = results_nmiPE)
+summary(lm_nmi_gdp_BH)
+```
+
+```{r}
+lm_nmi_gdp_NL <- lm(nmi.NL.PE ~ log_gdp, data = results_nmiPE)
+summary(lm_nmi_gdp_NL)
+```
+
+```{r}
+lm_nmi_gdp_SI <- lm(nmi.PE.SI ~ log_gdp, data = results_nmiPE)
+summary(lm_nmi_gdp_SI)
+```
+
+```{r}
+lm_nmi_gdp_WP <- lm(nmi.PE.WP ~ log_gdp, data = results_nmiPE)
+summary(lm_nmi_gdp_WP)
+```
+
+```{r}
+cor.test(results_nmiPE$log_pop, results$gdp_per_capita)
+```
+
+# Additional Figures
+
+```{r}
+AM <- ggplot(results, aes(x = Shannon_Absolute_AM, y = entropy_AM_50)) + geom_point(size = 1) + xlab("Shannon's entropy") + ylab("Batty's spatial entropy (relative)") + ggtitle ("OSM amenities (AM)")
+AM
+```
+
+```{r}
+BH <- ggplot(results, aes(x = Shannon_Absolute_BH, y = entropy_BH_50)) + geom_point(size = 1) + xlab("Shannon's entropy") + ylab("Batty's spatial entropy (relative)") + ggtitle ("Building Height (BH)")
+BH
+```
+
+```{r}
+NL <- ggplot(results, aes(x = Shannon_Absolute_NL, y = entropy_NL_50)) + geom_point(size = 1) + xlab("Shannon's entropy") + ylab("Batty's spatial entropy (relative)") + ggtitle ("Night Light (NL)")
+NL
+```
+
+```{r}
+PE <- ggplot(results, aes(x = Shannon_Absolute_PE, y = entropy_PE_50)) + geom_point(size = 1) + xlab("Shannon's entropy") + ylab("Batty's spatial entropy (relative)") + ggtitle ("Predicted Employment (PE)")
+PE
+```
+
+```{r}
+SI <- ggplot(results, aes(x = Shannon_Absolute_SI, y = entropy_SI_50)) + geom_point(size = 1) + xlab("Shannon's entropy") + ylab("Batty's spatial entropy (relative)") + ggtitle ("OSM street intersections (SI)")
+SI
+```
+
+```{r}
+WP <- ggplot(results, aes(x = Shannon_Absolute_WP, y = entropy_WP_50)) + geom_point(size = 1) + xlab("Shannon's entropy") + ylab("Batty's spatial entropy (relative)") + ggtitle ("Population (WP)")
+WP
+```
+
+```{r, fig.height = 10, fig.width=15}
+grid.arrange(AM, BH, NL, PE, SI, WP, nrow = 2)
+```
+

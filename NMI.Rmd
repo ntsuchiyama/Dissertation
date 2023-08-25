@@ -1,0 +1,244 @@
+---
+title: "NMI"
+output: html_document
+date: "2023-08-01"
+---
+
+# Setting up
+
+```{r}
+library(sf)
+library(aricode)
+library(reshape2)
+library(ggplot2)
+library(stringr)
+library(forcats)
+library(tidyverse)
+library(knitr)
+```
+
+# Reading in the data
+
+```{r}
+# basic procedure 
+input_path <- "data/cluster_2/"
+files_cluster <- list.files(input_path, pattern = "[.]gpkg$", full.names=T)
+for (f in files_cluster){
+  # read in file
+  shp <- st_read(f)
+  shp <- shp %>% st_drop_geometry() %>% select(-grid_id)
+  # get name to save
+  shp_name <- gsub(".*data/cluster_2/(.+).gpkg", "\\1", f)
+  # save with new name
+  assign(paste(shp_name), shp, envir = .GlobalEnv)
+}
+# remove the temporary objects
+rm(shp)
+```
+
+# Normalised Mutual Information
+
+```{r}
+# create function
+compute_nmi <- function(dataframe, df_name) {
+  num_cols <- ncol(dataframe)
+  col_names <- colnames(dataframe)
+  num_combinations <- choose(num_cols, 2)
+  
+  # Create an empty matrix to store the results
+  mi_matrix <- matrix(0, nrow = num_cols, ncol = num_cols)
+  rownames(mi_matrix) <- col_names
+  colnames(mi_matrix) <- col_names
+  
+  # Custom NMI function that handles NAs
+  custom_nmi <- function(x, y) {
+    x <- x[!is.na(x)]
+    y <- y[!is.na(y)]
+    if (length(x) == 0 | length(y) == 0) {
+      return(NA)
+    }
+    return(NMI(x, y))
+  }
+  
+  # Compute the mutual information for all combinations of columns
+  for (i in 1:num_cols) {
+    for (j in 1:num_cols) {
+      # Combine col1 and col2 into a data frame
+      df_combined <- data.frame(dataframe[[i]], dataframe[[j]])
+      
+      # Remove rows with NAs in either col1 or col2
+      df_cleaned <- df_combined[complete.cases(df_combined), ]
+      
+      # Extract the cleaned columns from the data frame
+      col1_cleaned <- df_cleaned[[1]]
+      col2_cleaned <- df_cleaned[[2]]
+      
+      # Normalize the mutual information using the NMI function from the 'aricode' package
+      nmi <- NMI(col1_cleaned, col2_cleaned)
+      
+      # Store the normalized mutual information in the matrix
+      mi_matrix[i, j] <- nmi
+      mi_matrix[j, i] <- nmi
+    }
+  }
+  
+  final_df <- as.data.frame(as.table(mi_matrix))
+  colnames(final_df)[3] = df_name
+  assign(paste0(df_name, "_nmi"), final_df, envir = .GlobalEnv)
+}
+```
+
+```{r}
+# list all dataframes
+dfs <- Filter(function(x) is(x, "data.frame"), mget(ls()))
+```
+
+```{r}
+# apply the function
+for (i in 1:length(dfs)){
+  df <- dfs[[i]]
+  city_name <- gsub("(.+)_cluster.*", "\\1", names(dfs)[i])
+  compute_nmi(df, city_name)
+}
+```
+
+```{r}
+# get list of nmi_data 
+nmi_dfs <- mget(grep('_nmi', names(which(unlist(eapply(.GlobalEnv,is.data.frame)))), value = TRUE))
+```
+
+```{r}
+# merge the results 
+nmi_initial <- nmi_dfs %>% reduce(left_join, by = c("Var1", "Var2"))
+```
+
+```{r}
+# calculate the mean
+nmi_result <- mutate(nmi_initial, nmi_mean = rowMeans(select(nmi_initial, 3:78)))
+```
+
+```{r}
+# extract results for mean column
+nmi_result_mean <- nmi_result %>% select(Var1, Var2, nmi_mean)
+```
+
+```{r}
+# change format (VAR2 into columns)
+nmi_result_mean_table <- nmi_result_mean %>%
+  pivot_wider(names_from = Var2, values_from = nmi_mean)
+
+# change row names to Var1 (econ cluster label)
+nmi_result_mean_tibble <- nmi_result_mean_table %>% remove_rownames %>% column_to_rownames(var="Var1") 
+```
+
+```{r}
+# shorten column and row names
+colnames(nmi_result_mean_tibble) <- substr(colnames(nmi_result_mean_tibble), nchar(colnames(nmi_result_mean_tibble))-1, nchar(colnames(nmi_result_mean_tibble)))
+
+rownames(nmi_result_mean_tibble) <- substr(rownames(nmi_result_mean_tibble), nchar(rownames(nmi_result_mean_tibble))-1, nchar(rownames(nmi_result_mean_tibble)))
+
+# convert to matrix
+nmi_result_mean_matrix <- data.matrix(nmi_result_mean_tibble)
+```
+
+### Heat map 
+
+```{r}
+nmi_longdata <- melt(nmi_result_mean_matrix)
+```
+
+
+```{r}
+ggplot(nmi_longdata, aes(x = Var2, y = Var1)) + 
+  geom_raster(aes(fill=value)) + 
+  scale_fill_gradient(low="grey90", high="red") +
+  theme_bw() + theme(axis.text.x=element_text(size=9, angle=0, vjust=0.3), axis.text.y=element_text(size=9)) + xlab("") + ylab("") +
+  geom_text(aes(label = round(value, 2)), size=2.5)
+```
+
+### Summary statistics
+
+```{r}
+# convert column for cities into rows 
+nmi_output <- nmi_initial %>%
+  pivot_longer(cols = c(3:78), names_to = "city_name")
+
+# shorten the names 
+nmi_output$Var1 <- str_sub(nmi_output$Var1, -2, -1)
+nmi_output$Var2 <- str_sub(nmi_output$Var2, -2, -1)
+
+# remove rows with same data_source
+nmi_output <- nmi_output[nmi_output$Var1 != nmi_output$Var2,]
+
+# create new column mergeing the two columns indicating data sources
+nmi_output <- nmi_output %>%
+  mutate(data_pairing = paste0(Var1, "-", Var2)) 
+
+# remove those two columns
+nmi_output <- subset(nmi_output, select = -c(Var1, Var2))
+
+# rows into columns
+nmi_output <- nmi_output %>%
+  pivot_wider(names_from = data_pairing, 
+              names_prefix = "nmi-",
+              values_from = value)
+
+# select columns 
+nmi_output <- nmi_output %>%
+  select(city_name, `nmi-AM-BH`, `nmi-AM-NL`, `nmi-AM-PE`, `nmi-AM-SI`, `nmi-AM-WP`, `nmi-BH-NL`, `nmi-BH-PE`, `nmi-BH-PE`, `nmi-BH-SI`, `nmi-BH-WP`, `nmi-NL-PE`, `nmi-NL-SI`, `nmi-NL-WP`, `nmi-PE-SI`, `nmi-PE-WP`, `nmi-SI-WP`)
+```
+
+```{r}
+# columns into rows 
+nmi_output_pivot <- nmi_output %>% pivot_longer(!city_name, names_to = "data_combination", values_to = "nmi_value")
+```
+
+```{r}
+nmi_output_sum_stats <- nmi_output_pivot %>% 
+  group_by(data_combination) %>%
+  summarise(
+    mean = round(mean(nmi_value, na.rm = TRUE), 3),
+    sd = round(sd(nmi_value, na.rm = TRUE), 3)
+  )
+
+print(nmi_output_sum_stats)
+```
+
+```{r}
+knitr::kable(nmi_output_sum_stats, format = "html")
+```
+
+### Distribution 
+
+```{r}
+# reorder
+nmi_output_pivot_reorder <- nmi_output_pivot %>%
+  mutate(data_combination = fct_reorder(data_combination, nmi_value, .fun='median')) 
+```
+
+
+```{r}
+# distribution 
+nmi_plot <- ggplot(nmi_output_pivot_reorder, aes(x=reorder(data_combination, nmi_value), y=nmi_value)) + 
+    geom_boxplot(fill="slateblue", alpha=0.2) + 
+    xlab("Data Comparison") + ylab("NMI") + 
+    theme(axis.text.x = element_text(size = 7.5))
+nmi_plot
+```
+
+```{r, fig.height = 4, fig.width = 6}
+# distribution 
+nmi_plot_2 <- ggplot(nmi_output_pivot_reorder, aes(x=nmi_value, color = data_combination, fill = data_combination)) + 
+  geom_histogram(alpha=0.2, bins = 10) + theme(
+      legend.position="none") +
+  facet_wrap(~data_combination, nrow = 3)
+nmi_plot_2
+```
+
+# Export results
+
+```{r}
+# export the results
+write.csv(nmi_output, "data/nmi_results.csv", row.names=FALSE)
+```
+
